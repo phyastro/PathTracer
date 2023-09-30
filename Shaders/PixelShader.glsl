@@ -269,7 +269,7 @@ float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
     float radiance = 0.0;
     float rayradiance = 1.0;
     bool isTerminate = false;
-    for (int i = 0; i < (pathLength + 1); i++) {
+    for (int i = 0; i < pathLength; i++) {
         radiance += TraceRay(l, rayradiance, origin, dir, seed, isTerminate);
         if (isTerminate){
             break;

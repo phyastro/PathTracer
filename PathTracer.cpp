@@ -15,9 +15,9 @@
 #include <vector>
 
 //#define RENDERING
-const int SAMPLES = 1000;
+const int SAMPLES = 50000;
 const int SAMPLESPERFRAME = 10;
-const int PATHLENGTH = 5;
+const int PATHLENGTH = 3;
 
 struct sphere {
     float pos[3];
@@ -216,19 +216,21 @@ int main(int, char**)
     spheres.push_back(sphere1);
     spheres.push_back(sphere2);
     spheres.push_back(sphere3);*/
-    sphere sphere1 = { { 0.0f, 1.0f, 0.0f }, 1.0f, 1 };
+    /*sphere sphere1 = {{0.0f, 1.0f, 0.0f}, 1.0f, 1};
     sphere sphere2 = { { 5.0f, 1.0f, -1.0f }, 1.0f, 2 };
     sphere sphere3 = { { 0.0f, 4.0f, -3.0f }, 1.0f, 3 };
     spheres.push_back(sphere1);
     spheres.push_back(sphere2);
-    spheres.push_back(sphere3);
-    //sphere sphere1 = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
-    //spheres.push_back(sphere1);
+    spheres.push_back(sphere3);*/
+    sphere sphere1 = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
+    sphere sphere2 = { { -2.5f, 2.0f, -2.0f }, 1.0f, 2 };
+    spheres.push_back(sphere1);
+    spheres.push_back(sphere2);
 
     std::vector <plane> planes;
     plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
-    plane plane1 = { { 0.0f, 0.0f, 0.0f }, 1 };
-    planes.push_back(plane1);
+    //plane plane1 = { { 0.0f, 0.0f, 0.0f }, 1 };
+    //planes.push_back(plane1);
 
     std::vector <material> materials;
     material newmaterial = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
@@ -240,14 +242,16 @@ int main(int, char**)
     materials.push_back(material2);
     materials.push_back(material3);
     materials.push_back(material4);*/
-    material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
+    /*material material1 = {{550.0f, 100.0f, 0}, {550.0f, 100.0f, 0, 0.0f}};
     material material2 = { { 470.0f, 6.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
     material material3 = { { 550.0f, 0.0f, 0 }, { 550.0f, 11.0f, 0, 0.38f } };
     materials.push_back(material1);
     materials.push_back(material2);
-    materials.push_back(material3);
-    //material material1 = { { 550.0f, 0.0f, 0 }, { 550.0f, 100.0f, 0, 1.0f } };
-    //materials.push_back(material1);
+    materials.push_back(material3);*/
+    material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
+    material material2 = { { 550.0f, 0.0f, 0 }, { 550.0f, 100.0f, 0, 0.2f } };
+    materials.push_back(material1);
+    materials.push_back(material2);
 
     GLuint FBO;
     glGenFramebuffers(1, &FBO);
@@ -302,7 +306,7 @@ int main(int, char**)
     float FPS = 60.0f;
     float FOV = 60.0f;
     float shutterSpeed = 0.00025f;
-    float apertureSize = 4.0f;
+    float apertureSize = 1.0f;
     int pathsPerFP = 1;
     int pathLength = 5;
     glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
