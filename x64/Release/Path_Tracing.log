@@ -1,0 +1,15 @@
+﻿  glad.c
+  imgui_impl_opengl3.cpp
+  imgui_impl_sdl2.cpp
+  imgui.cpp
+  imgui_demo.cpp
+  imgui_draw.cpp
+  imgui_tables.cpp
+  imgui_widgets.cpp
+  Path_Tracing.cpp
+  Generating code
+  190 of 2345 functions ( 8.1%) were compiled, the rest were copied from previous compilation.
+    136 functions were new in current compilation
+    145 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  Path_Tracing.vcxproj -> C:\Users\adars\Documents\Visual Studio Code\C++\Path_Tracing\x64\Release\Path_Tracing.exe
