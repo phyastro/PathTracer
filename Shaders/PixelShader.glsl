@@ -279,21 +279,22 @@ float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
     return radiance;
 }
 
-uint GenerateSeed(uint k) {
+uint GenerateSeed(uint x, uint y, uint k) {
     // Actually This Is Not The Correct Way To Generate Seed.
     // This Is The Correct Implementation Which Has No Overlapping:
     /* uint seed = (resolution.x * resolution.y) * (pathsPerFP * (frame - 1)) + k;
-       seed += uint(gl_FragCoord.x + resolution.x * gl_FragCoord.y);*/
+       seed += x + resolution.x * y;*/
     // But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
-    // I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result.
+    // That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result.
+    // Not Sure Why When Rendering In Very High Resolutions, Each Two Horizontal Pixels Have Same Seed On Top Half Of The Image.
     uint seed = (pathsPerFP * (frame - 1)) + k;
     PCG32(seed);
-    seed = uint(mod(uint64_t(seed) + uint64_t(gl_FragCoord.x + resolution.x * gl_FragCoord.y), 0xFFFFFFFFul));
+    seed = uint(mod(uint64_t(seed) + uint64_t(x + resolution.x * y), 0xFFFFFFFFul));
     return seed;
 }
 
-vec3 Scene(int x, int y, uint k) {
-    uint seed = GenerateSeed(k);
+vec3 Scene(uint x, uint y, uint k) {
+    uint seed = GenerateSeed(x, y, k);
 	float tan_fov = tan(radians(FOV / 2.0));
 	vec2 uv = ((vec2(x, y) * 2.0 - resolution) / resolution.y) * tan_fov;
     // SSAA
@@ -321,8 +322,8 @@ vec3 Scene(int x, int y, uint k) {
 void main() {
     vec3 color = vec3(0.0);
     for (uint i = 0; i < pathsPerFP; i++) {
-        color += Scene(int(gl_FragCoord.x), int(gl_FragCoord.y), i);
+        color += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
     }
     color /= pathsPerFP;
-	Fragcolor = texture(screenTexture, gl_FragCoord.xy/resolution) + vec4(color, 1.0);
+	Fragcolor = vec4(texture(screenTexture, gl_FragCoord.xy / resolution.xy).xyz + color, 1.0);
 }
