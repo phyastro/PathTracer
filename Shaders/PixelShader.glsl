@@ -1,4 +1,5 @@
 #version 460 core
+#extension GL_EXT_shader_explicit_arithmetic_types : require
 
 layout(location = 0) out vec4 Fragcolor;
 
@@ -278,10 +279,21 @@ float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
     return radiance;
 }
 
-vec3 Scene(int x, int y, uint k) {
-    uint seed = (resolution.x * resolution.y) * ((pathsPerFP * (frame - 1)) + k);
-    seed += uint(x + resolution.x * y);
+uint GenerateSeed(uint k) {
+    // Actually This Is Not The Correct Way To Generate Seed.
+    // This Is The Correct Implementation Which Has No Overlapping:
+    /* uint seed = (resolution.x * resolution.y) * (pathsPerFP * (frame - 1)) + k;
+       seed += uint(gl_FragCoord.x + resolution.x * gl_FragCoord.y);*/
+    // But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
+    // I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result.
+    uint seed = (pathsPerFP * (frame - 1)) + k;
+    PCG32(seed);
+    seed = uint(mod(uint64_t(seed) + uint64_t(gl_FragCoord.x + resolution.x * gl_FragCoord.y), 0xFFFFFFFFul));
+    return seed;
+}
 
+vec3 Scene(int x, int y, uint k) {
+    uint seed = GenerateSeed(k);
 	float tan_fov = tan(radians(FOV / 2.0));
 	vec2 uv = ((vec2(x, y) * 2.0 - resolution) / resolution.y) * tan_fov;
     // SSAA

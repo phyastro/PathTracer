@@ -17,7 +17,7 @@
 //#define RENDERING
 const int SAMPLES = 50000;
 const int SAMPLESPERFRAME = 10;
-const int PATHLENGTH = 3;
+const int PATHLENGTH = 5;
 
 struct sphere {
     float pos[3];
