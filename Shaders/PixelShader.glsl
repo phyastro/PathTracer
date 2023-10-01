@@ -286,7 +286,6 @@ uint GenerateSeed(uint x, uint y, uint k) {
        seed += x + resolution.x * y;*/
     // But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
     // That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result.
-    // Not Sure Why When Rendering In Very High Resolutions, Each Two Horizontal Pixels Have Same Seed On Top Half Of The Image.
     uint seed = (pathsPerFP * (frame - 1)) + k;
     PCG32(seed);
     seed = uint(mod(uint64_t(seed) + uint64_t(x + resolution.x * y), 0xFFFFFFFFul));
@@ -325,5 +324,5 @@ void main() {
         color += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
     }
     color /= pathsPerFP;
-	Fragcolor = vec4(texture(screenTexture, gl_FragCoord.xy / resolution.xy).xyz + color, 1.0);
+	Fragcolor = texture(screenTexture, gl_FragCoord.xy / resolution) + vec4(color, 1.0);
 }

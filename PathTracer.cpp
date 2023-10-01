@@ -16,7 +16,7 @@
 
 //#define RENDERING
 const int SAMPLES = 50000;
-const int SAMPLESPERFRAME = 10;
+const int SAMPLESPERFRAME = 20;
 const int PATHLENGTH = 5;
 
 struct sphere {
@@ -159,7 +159,7 @@ int main(int, char**)
     #else
         WindowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
     #endif
-    SDL_Window* window = SDL_CreateWindow("Path Tracing", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, WindowFlags);
+    SDL_Window* window = SDL_CreateWindow("Path Tracer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, WindowFlags);
     SDL_GLContext context = SDL_GL_CreateContext(window);
     SDL_GL_SetSwapInterval(0);  // VSYNC
 
