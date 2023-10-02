@@ -205,6 +205,19 @@ float RandomFloat(inout uint seed) {
     return float(seed) / 0xFFFFFFFFu;
 }
 
+uint GenerateSeed(uint x, uint y, uint k) {
+    // Actually This Is Not The Correct Way To Generate Seed.
+    // This Is The Correct Implementation Which Has No Overlapping:
+    /* uint seed = (resolution.x * resolution.y) * (pathsPerFP * (frame - 1)) + k;
+       seed += x + resolution.x * y;*/
+    // But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
+    // That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result.
+    uint seed = (pathsPerFP * (frame - 1)) + k;
+    PCG32(seed);
+    seed = uint(mod(uint64_t(seed) + uint64_t(x + resolution.x * y), 0xFFFFFFFFul));
+    return seed;
+}
+
 float RandomNormal(inout uint seed) {
     return cos(2.0 * pi * RandomFloat(seed)) * sqrt(-2.0 * log(RandomFloat(seed)) / log(10.0));
 }
@@ -246,6 +259,7 @@ float Emit(float l, material mat) {
 }
 
 float TraceRay(in float l, inout float rayradiance, inout vec3 origin, inout vec3 dir, inout uint seed, out bool isTerminate) {
+    // Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
     float radiance = 0.0;
     vec3 normal = vec3(0.0);
     material mat;
@@ -267,6 +281,8 @@ float TraceRay(in float l, inout float rayradiance, inout vec3 origin, inout vec
 }
 
 float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
+    // Traces A Path Starting From The Given Origin And Direction
+    // And Calculates Light Radiance
     float radiance = 0.0;
     float rayradiance = 1.0;
     bool isTerminate = false;
@@ -277,19 +293,6 @@ float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
         }
     }
     return radiance;
-}
-
-uint GenerateSeed(uint x, uint y, uint k) {
-    // Actually This Is Not The Correct Way To Generate Seed.
-    // This Is The Correct Implementation Which Has No Overlapping:
-    /* uint seed = (resolution.x * resolution.y) * (pathsPerFP * (frame - 1)) + k;
-       seed += x + resolution.x * y;*/
-    // But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
-    // That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result.
-    uint seed = (pathsPerFP * (frame - 1)) + k;
-    PCG32(seed);
-    seed = uint(mod(uint64_t(seed) + uint64_t(x + resolution.x * y), 0xFFFFFFFFul));
-    return seed;
 }
 
 vec3 Scene(uint x, uint y, uint k) {

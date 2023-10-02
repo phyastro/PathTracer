@@ -35,68 +35,112 @@ struct material {
     float emission[4];
 };
 
-void CalculateOrigin(glm::vec3* rayorigin, glm::vec3 deltarayorigin, glm::vec2 theta) {
+void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<material>& materials) {
+    // Camera
+    cameraPos = glm::vec3(6.332f, 3.855f, 3.140f);
+    cameraAngle = glm::vec2(225.093f, -31.512f);
+
+    // Spheres
+    sphere sphere1 = { { 0.0f, 1.0f, 0.0f }, 1.0f, 1 };
+    sphere sphere2 = { { 5.0f, 1.0f, -1.0f }, 1.0f, 2 };
+    sphere sphere3 = { { 0.0f, 4.0f, -3.0f }, 1.0f, 3 };
+    spheres.push_back(sphere1);
+    spheres.push_back(sphere2);
+    spheres.push_back(sphere3);
+
+    // Planes
+    plane plane1 = { { 0.0f, 0.0f, 0.0f }, 1 };
+    planes.push_back(plane1);
+
+    // Materials
+    material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
+    material material2 = { { 470.0f, 6.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
+    material material3 = { { 550.0f, 0.0f, 0 }, { 550.0f, 11.0f, 0, 0.38f } };
+    materials.push_back(material1);
+    materials.push_back(material2);
+    materials.push_back(material3);
+}
+
+void world2(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<material>& materials) {
+    // Camera
+    cameraPos = glm::vec3(0.0f, 0.0f, -2.5f);
+    cameraAngle = glm::vec2(0.0f, 0.0f);
+
+    // Spheres
+    sphere sphere1 = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1};
+    sphere sphere2 = { { -2.5f, 2.0f, -2.0f }, 1.0f, 2 };
+    spheres.push_back(sphere1);
+    spheres.push_back(sphere2);
+
+    // Materials
+    material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
+    material material2 = { { 550.0f, 0.0f, 0 }, { 550.0f, 100.0f, 0, 0.2f } };
+    materials.push_back(material1);
+    materials.push_back(material2);
+}
+
+void UpdateCameraPos(glm::vec3& cameraPos, glm::vec3 deltaCamPos, glm::vec2 cameraAngle) {
     // http://www.songho.ca/opengl/gl_anglestoaxes.html
-    theta = glm::vec2(-theta.y, theta.x);
+    glm::vec2 theta = glm::vec2(-cameraAngle.y, cameraAngle.x);
     glm::mat3 mX = glm::mat3(1.0f, 0.0f, 0.0f, 0.0f, glm::cos(theta.x), -glm::sin(theta.x), 0.0f, glm::sin(theta.x), glm::cos(theta.x));
     glm::mat3 mY = glm::mat3(glm::cos(theta.y), 0.0f, glm::sin(theta.y), 0.0f, 1.0f, 0.0f, -glm::sin(theta.y), 0.0f, glm::cos(theta.y));
     glm::mat3 m = mX * mY;
-    *rayorigin = *rayorigin + deltarayorigin * m;
+    cameraPos = cameraPos + deltaCamPos * m;
 }
 
-void ItemsTable(const char* name, int* selection, int id, int size) {
+void ItemsTable(const char* name, int& selection, int id, int size) {
     for (int i = id; i < (size + id); i++) {
         ImGui::PushID(i);
         ImGui::TableNextRow();
         char label[32];
         sprintf_s(label, name, i - id + 1);
         ImGui::TableSetColumnIndex(0);
-        bool isSelected = *selection == i;
+        bool isSelected = selection == i;
         if (ImGui::Selectable(label, &isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
             if (isSelected) {
-                *selection = i;
+                selection = i;
             }
         }
         ImGui::PopID();
     }
 }
 
-void SDLHandleEvents(bool* isRunning, glm::ivec2 resolution, glm::vec2* cursorPos, glm::vec2* theta, glm::vec3* deltarayorigin, bool isWindowFocused, bool* isReset) {
+void SDLHandleEvents(bool& isRunning, glm::ivec2 resolution, glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isReset, bool isWindowFocused) {
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL2_ProcessEvent(&event);
         if (event.type == SDL_QUIT) {
-            *isRunning = false;
+            isRunning = false;
         }
     }
 
     glm::vec2 cursorPos1 = glm::vec2((float)(ImGui::GetMousePos().x) / (float)resolution.x, (float)(resolution.y - ImGui::GetMousePos().y) / (float)resolution.y);
     if (!isWindowFocused) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            *isReset = true;
-            glm::vec2 dxdy = cursorPos1 - *cursorPos;
-            *theta = *theta - (2.0f * glm::pi<float>() * dxdy);
-            if (theta->x > (2.0f * glm::pi<float>())) {
-                theta->x = theta->x - (2.0f * glm::pi<float>());
+            isReset = true;
+            glm::vec2 dxdy = cursorPos1 - cursorPos;
+            cameraAngle = cameraAngle - (360.0f * dxdy);
+            if (cameraAngle.x > 360.0f) {
+                cameraAngle.x = cameraAngle.x - 360.0f;
             }
-            if (theta->x < 0.0f) {
-                theta->x = (2.0f * glm::pi<float>()) + theta->x;
+            if (cameraAngle.x < 0.0f) {
+                cameraAngle.x = 360.0f + cameraAngle.x;
             }
-            if (theta->y > (glm::pi<float>() / 2.0f)) {
-                theta->y = glm::pi<float>() / 2.0f;
+            if (cameraAngle.y > 90.0f) {
+                cameraAngle.y = 90.0f;
             }
-            if (theta->y < -(glm::pi<float>() / 2.0f)) {
-                theta->y = -glm::pi<float>() / 2.0f;
+            if (cameraAngle.y < -90.0f) {
+                cameraAngle.y = -90.0f;
             }
         }
     }
-    *cursorPos = cursorPos1;
-    deltarayorigin->x = ((float)(ImGui::IsKeyDown(ImGuiKey_D)) - (float)(ImGui::IsKeyDown(ImGuiKey_A)));
-    deltarayorigin->y = ((float)(ImGui::IsKeyDown(ImGuiKey_E)) - (float)(ImGui::IsKeyDown(ImGuiKey_Q)));
-    deltarayorigin->z = ((float)(ImGui::IsKeyDown(ImGuiKey_W)) - (float)(ImGui::IsKeyDown(ImGuiKey_S)));
-    if ((deltarayorigin->x != 0.0f) || (deltarayorigin->y != 0.0f) || (deltarayorigin->z != 0.0f)) {
-        *isReset = true;
+    cursorPos = cursorPos1;
+    deltaCamPos.x = ((float)(ImGui::IsKeyDown(ImGuiKey_D)) - (float)(ImGui::IsKeyDown(ImGuiKey_A)));
+    deltaCamPos.y = ((float)(ImGui::IsKeyDown(ImGuiKey_E)) - (float)(ImGui::IsKeyDown(ImGuiKey_Q)));
+    deltaCamPos.z = ((float)(ImGui::IsKeyDown(ImGuiKey_W)) - (float)(ImGui::IsKeyDown(ImGuiKey_S)));
+    if ((deltaCamPos.x != 0.0f) || (deltaCamPos.y != 0.0f) || (deltaCamPos.z != 0.0f)) {
+        isReset = true;
     }
 }
 
@@ -142,7 +186,7 @@ void flipSurface(SDL_Surface* surface)
     SDL_UnlockSurface(surface);
 }
 
-int main(int, char**)
+int main(int argc, char* argv[])
 {
     SDL_Init(SDL_INIT_VIDEO);
 
@@ -207,51 +251,6 @@ int main(int, char**)
     glBufferData(GL_ARRAY_BUFFER, sizeof(rectVertices), &rectVertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    
-    std::vector <sphere> spheres;
-    sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
-    /*sphere sphere1 = {{-3.5f, 3.0f, 4.0f}, 4.0f, 3};
-    sphere sphere2 = { {6.0f, 1.0f, 0.0f}, 4.0f, 4 };
-    sphere sphere3 = { {0.0f, 1.0f, 0.0f}, 1.0f, 2 };
-    spheres.push_back(sphere1);
-    spheres.push_back(sphere2);
-    spheres.push_back(sphere3);*/
-    /*sphere sphere1 = {{0.0f, 1.0f, 0.0f}, 1.0f, 1};
-    sphere sphere2 = { { 5.0f, 1.0f, -1.0f }, 1.0f, 2 };
-    sphere sphere3 = { { 0.0f, 4.0f, -3.0f }, 1.0f, 3 };
-    spheres.push_back(sphere1);
-    spheres.push_back(sphere2);
-    spheres.push_back(sphere3);*/
-    sphere sphere1 = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
-    sphere sphere2 = { { -2.5f, 2.0f, -2.0f }, 1.0f, 2 };
-    spheres.push_back(sphere1);
-    spheres.push_back(sphere2);
-
-    std::vector <plane> planes;
-    plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
-    //plane plane1 = { { 0.0f, 0.0f, 0.0f }, 1 };
-    //planes.push_back(plane1);
-
-    std::vector <material> materials;
-    material newmaterial = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-    /*material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-    material material2 = { { 450.0f, 7.5f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-    material material3 = { { 550.0f, 0.0f, 0 }, { 650.0f, 10.0f, 0, 1.0f } };
-    material material4 = { { 550.0f, 0.0f, 0 }, { 450.0f, 10.0f, 0, 1.0f } };
-    materials.push_back(material1);
-    materials.push_back(material2);
-    materials.push_back(material3);
-    materials.push_back(material4);*/
-    /*material material1 = {{550.0f, 100.0f, 0}, {550.0f, 100.0f, 0, 0.0f}};
-    material material2 = { { 470.0f, 6.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-    material material3 = { { 550.0f, 0.0f, 0 }, { 550.0f, 11.0f, 0, 0.38f } };
-    materials.push_back(material1);
-    materials.push_back(material2);
-    materials.push_back(material3);*/
-    material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-    material material2 = { { 550.0f, 0.0f, 0 }, { 550.0f, 100.0f, 0, 0.2f } };
-    materials.push_back(material1);
-    materials.push_back(material2);
 
     GLuint FBO;
     glGenFramebuffers(1, &FBO);
@@ -310,11 +309,9 @@ int main(int, char**)
     int pathsPerFP = 1;
     int pathLength = 5;
     glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
-    //glm::vec2 theta = glm::radians(glm::vec2(330.0f, -13.5f));
-    //glm::vec3 rayorigin = glm::vec3(1.6f, 1.5f, -3.0f);
-    glm::vec2 theta = glm::radians(glm::vec2(0.0f, 0.0f));
-    glm::vec3 rayorigin = glm::vec3(0.0f, 0.0f, -2.5f);
-    glm::vec3 deltarayorigin = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
+    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
     bool isBeginning = true;
     bool isWindowFocused = false;
     std::vector <float> frames;
@@ -325,14 +322,22 @@ int main(int, char**)
         start = SDL_GetTicks64();
     #endif
 
+    std::vector <sphere> spheres;
+    sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
+    std::vector <plane> planes;
+    plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
+    std::vector <material> materials;
+    material newmaterial = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
+    world1(cameraPos, cameraAngle, spheres, planes, materials);
+
     while (isRunning) {
         bool isReset = false;
         bool isWinSizeChanged = false;
 
         #ifndef RENDERING
-            SDLHandleEvents(&isRunning, glm::ivec2(width, height), &cursorPos, &theta, &deltarayorigin, isWindowFocused, &isReset);
-            deltarayorigin *= 3.0f / FPS;
-            CalculateOrigin(&rayorigin, deltarayorigin, theta);
+            SDLHandleEvents(isRunning, glm::ivec2(width, height), cursorPos, cameraAngle, deltaCamPos, isReset, isWindowFocused);
+            deltaCamPos *= 3.0f / FPS;
+            UpdateCameraPos(cameraPos, deltaCamPos, glm::radians(cameraAngle));
             glm::ivec2 tempWindowSize{};
             SDL_GetWindowSize(window, &tempWindowSize.x, &tempWindowSize.y);
             if ((tempWindowSize.x != width) || (tempWindowSize.y != height)) {
@@ -353,8 +358,8 @@ int main(int, char**)
                 ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
                 ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
                 ImGui::Text("Paths/Pixel: %i", frame * pathsPerFP);
-                ImGui::Text("Camera Angle: (%0.3f, %0.3f)", glm::degrees(theta.x), glm::degrees(theta.y));
-                ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", rayorigin.x, rayorigin.y, rayorigin.z);
+                ImGui::Text("Camera Angle: (%0.3f, %0.3f)", cameraAngle.x, cameraAngle.y);
+                ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", cameraPos.x, cameraPos.y, cameraPos.z);
                 isReset |= ImGui::DragFloat("Camera FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");
                 isReset |= ImGui::DragFloat("Shutter Speed", &shutterSpeed, 0.00025f, 0.00025f, 0.05f, "%0.5f");
                 isReset |= ImGui::DragFloat("Aperture Size", &apertureSize, 0.5f, 1.0f, 50.0f, "%0.2f");
@@ -389,8 +394,8 @@ int main(int, char**)
                     if (ImGui::BeginTable("Objects Table", 1)) {
                         ImGui::TableSetupColumn("Object");
                         ImGui::TableHeadersRow();
-                        ItemsTable("Sphere %i", &objectsSelection, 0, (int)spheres.size());
-                        ItemsTable("Plane %i", &objectsSelection, (int)spheres.size(), (int)planes.size());
+                        ItemsTable("Sphere %i", objectsSelection, 0, (int)spheres.size());
+                        ItemsTable("Plane %i", objectsSelection, (int)spheres.size(), (int)planes.size());
                         ImGui::EndTable();
                     }
                 }
@@ -429,7 +434,7 @@ int main(int, char**)
                     if (ImGui::BeginTable("Materials Table", 1)) {
                         ImGui::TableSetupColumn("Materials");
                         ImGui::TableHeadersRow();
-                        ItemsTable("Material %i", &materialsSelection, 0, (int)materials.size());
+                        ItemsTable("Material %i", materialsSelection, 0, (int)materials.size());
                         ImGui::EndTable();
                     }
                 }
@@ -461,8 +466,8 @@ int main(int, char**)
             glUniform2i(glGetUniformLocation(shaderProgram, "resolution"), width, height);
         }
         if (isReset || isBeginning) {
-            glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), theta.x, theta.y);
-            glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), rayorigin.x, rayorigin.y, rayorigin.z);
+            glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), glm::radians(cameraAngle.x), glm::radians(cameraAngle.y));
+            glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
             glUniform1f(glGetUniformLocation(shaderProgram, "FOV"), FOV);
             glUniform1f(glGetUniformLocation(shaderProgram, "apertureSize"), apertureSize);
             glUniform1i(glGetUniformLocation(shaderProgram, "pathsPerFP"), pathsPerFP);
