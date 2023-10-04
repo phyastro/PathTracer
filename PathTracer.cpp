@@ -363,7 +363,7 @@ int main(int argc, char* argv[])
 				ImGui::SetWindowPos(ImVec2(width - ImGui::GetWindowWidth(), 0));
 				ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
 				ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
-				ImGui::Text("Paths/Pixel: %i", sFrame * pathsPerFP);
+				ImGui::Text("Paths/Pixel: %i", prevSFrame * pathsPerFP);
 				ImGui::Text("Camera Angle: (%0.3f, %0.3f)", cameraAngle.x, cameraAngle.y);
 				ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", cameraPos.x, cameraPos.y, cameraPos.z);
 				isReset |= ImGui::DragFloat("Camera FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");

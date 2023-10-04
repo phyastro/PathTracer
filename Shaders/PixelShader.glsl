@@ -5,8 +5,8 @@ layout(location = 0) out vec4 Fragcolor;
 
 uniform ivec2 resolution;
 uniform int frame;
-uniform int frame0;
-uniform int prevFrame0;
+uniform int sFrame;
+uniform int prevSFrame;
 uniform vec2 cameraAngle;
 uniform vec3 cameraPos;
 uniform float FOV;
@@ -204,6 +204,10 @@ void PCG32(inout uint seed) {
 	seed = (word >> 22u) ^ word;
 }
 
+void LCG(inout uint seed) {
+	seed = uint(mod(double(seed * 230943004u + 103903449u), 203200945u));
+}
+
 float RandomFloat(inout uint seed) {
 	PCG32(seed);
 	return float(seed) / 0xFFFFFFFFu;
@@ -331,8 +335,8 @@ void main() {
 		color.xyz += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
 	}
 	color.xyz /= pathsPerFP;
-	if (frame0 < 2) {
-		color = 0.5 * texture(screenTexture, gl_FragCoord.xy / resolution) / prevFrame0 + 0.5 * color;
+	if (sFrame < 2) {
+		color = 0.5 * texture(screenTexture, gl_FragCoord.xy / resolution) / prevSFrame + 0.5 * color;
 	} else {
 		color = texture(screenTexture, gl_FragCoord.xy / resolution) + color;
 	}
