@@ -113,6 +113,8 @@ float PlaneIntersection(vec3 origin, vec3 dir, vec3 pos, out vec3 normal) {
 	return t;
 }
 
+// Box Intersection By iq
+// https://www.shadertoy.com/view/ld23DV
 float BoxIntersection(vec3 origin, vec3 dir, vec3 size, vec3 pos, out vec3 normal) {
 	vec3 localorigin = origin - pos;
 	vec3 m = 1.0 / dir;
