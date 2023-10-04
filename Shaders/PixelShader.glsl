@@ -205,7 +205,7 @@ void PCG32(inout uint seed) {
 }
 
 void LCG(inout uint seed) {
-	seed = uint(mod(double(seed * 230943004u + 103903449u), 203200945u));
+	seed = uint(mod(double(seed) * 983478477ul, 0xFFFFFFFFu));
 }
 
 float RandomFloat(inout uint seed) {
