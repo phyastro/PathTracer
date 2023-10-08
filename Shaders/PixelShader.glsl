@@ -5,13 +5,13 @@ layout(location = 0) out vec4 Fragcolor;
 
 uniform ivec2 resolution;
 uniform int frame;
-uniform int sFrame;
-uniform int prevSFrame;
+uniform int samples;
+uniform int prevSamples;
 uniform vec2 cameraAngle;
 uniform vec3 cameraPos;
 uniform float FOV;
 uniform float apertureSize;
-uniform int pathsPerFP;
+uniform int samplesPerFrame;
 uniform int pathLength;
 uniform float CIEXYZ1964[1413];
 uniform int numObjects[];
@@ -205,9 +205,10 @@ void PCG32(inout uint seed) {
 }
 
 /*
-// LCG PRNG Try and it produces significant artifacts especially on the light sources and 3 ms slowdown(250FPS->100FPS)
-// therefore, this method can get discarded.
 void LCG(inout uint seed) {
+	// LCG PRNG Test
+	// Produces Significant Artifacts Especially On The Light Sources And 3ms Slower(250FPS->100FPS)
+	// Therefore, This Method Can Get Discarded
 	seed = uint(mod(double(seed) * 983478477ul, 0xFFFFFFFFu));
 }
 */
@@ -218,19 +219,23 @@ float RandomFloat(inout uint seed) {
 }
 
 uint GenerateSeed(uint x, uint y, uint k) {
-	// Actually This Is Not The Correct Way To Generate Seed.
+	// Actually This Is Not The Correct Way To Generate Seed
 	// This Is The Correct Implementation Which Has No Overlapping:
-	/* uint seed = (resolution.x * resolution.y) * (pathsPerFP * (frame - 1)) + k;
+	/* uint seed = (resolution.x * resolution.y) * (frame - 1) + k;
 	   seed += x + resolution.x * y;*/
 	// But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
-	// That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result.
-	uint seed = (pathsPerFP * (frame - 1)) + k;
+	// That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result
+	uint seed = (frame - 1) + k;
 	PCG32(seed);
 	seed = uint(mod(uint64_t(seed) + uint64_t(x + resolution.x * y), 0xFFFFFFFFul));
 	return seed;
 }
 
 vec3 UniformRandomPointsUnitSphere(inout uint seed){
+	// Generates Uniformly Distributed Random Points On Unit Sphere
+	// XYZ Coordinates Is Calculated Based On Longitude And Latitude
+	// Longitude Is Generated Uniformly And Sin Of Latitude Is Generated Uniformly
+	// Reason: If We Generate Latitude Uniformly, The Top And Bottom Of The Sphere Will Have More Points Than Other Regions
 	float phi = 2.0 * pi * RandomFloat(seed);
 	float sintheta = 2.0 * RandomFloat(seed) - 1.0;
 	float costheta = sqrt(1.0 - sintheta * sintheta);
@@ -250,7 +255,8 @@ float SpectralPowerDistribution(float l, float l_peak, float d, int invert) {
 	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
 	// Using Gaussian Function To Predict Spectral Radiance
 	// In Reality, Spectral Radiance Function Has Different Shapes For Different Objects Also Looks Much Different Than This
-	float radiance = exp(-pow(((l - l_peak) / (2 * d * d)), 2));
+	float x = (l - l_peak) / (2 * d * d);
+	float radiance = exp(-x * x);
 	radiance = mix(radiance, 1.0 - radiance, invert);
 	return radiance;
 }
@@ -333,12 +339,11 @@ vec3 Scene(uint x, uint y, uint k) {
 
 void main() {
 	vec4 color = vec4(0.0);
-	for (uint i = 0; i < pathsPerFP; i++) {
+	for (uint i = 0; i < samplesPerFrame; i++) {
 		color.xyz += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
 	}
-	color.xyz /= pathsPerFP;
-	if (sFrame < 2) {
-		color = (0.6 * texture(screenTexture, gl_FragCoord.xy / resolution) / prevSFrame) + 0.4 * color;
+	if ((samples < 2) && (frame > 1)) {
+		color = (0.7 * texture(screenTexture, gl_FragCoord.xy / resolution) / prevSamples) + (0.3 * color);
 	} else {
 		color = texture(screenTexture, gl_FragCoord.xy / resolution) + color;
 	}

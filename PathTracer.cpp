@@ -15,8 +15,8 @@
 #include <vector>
 
 //#define RENDERING
-const int SAMPLES = 50000;
-const int SAMPLESPERFRAME = 20;
+const int NUMSAMPLES = 50000;
+const int NUMSAMPLESPERFRAME = 20;
 const int PATHLENGTH = 5;
 
 struct sphere {
@@ -304,29 +304,30 @@ int main(int argc, char* argv[])
 	glUniform1i(glGetUniformLocation(frameBufferProgram, "screenTexture"), 0);
 
 	bool isRunning = true;
-	int frame = 1;
-	int sFrame = 1;
-	int prevSFrame = 1;
+	int samplesPerFrame = 1;
+	int pathLength = 5;
 	uint64_t start = 0;
+#ifdef RENDERING
+	samplesPerFrame = NUMSAMPLESPERFRAME;
+	pathLength = PATHLENGTH;
+	start = SDL_GetTicks64();
+#endif
+	int frame = samplesPerFrame;
+	int samples = samplesPerFrame;
+	int prevSamples = samplesPerFrame;
 	float FPS = 60.0f;
 	float FOV = 60.0f;
 	float shutterSpeed = 0.00025f;
 	float apertureSize = 1.0f;
-	int pathsPerFP = 1;
-	int pathLength = 5;
-	glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
-	glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	bool isBeginning = true;
+#ifndef RENDERING
+	glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
+	glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	bool isWindowFocused = false;
 	std::vector <float> frames;
-
-	#ifdef RENDERING
-		pathsPerFP = SAMPLESPERFRAME;
-		pathLength = PATHLENGTH;
-		start = SDL_GetTicks64();
-	#endif
+#endif
 
 	std::vector <sphere> spheres;
 	sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
@@ -340,124 +341,126 @@ int main(int argc, char* argv[])
 		bool isReset = false;
 		bool isWinSizeChanged = false;
 
-		#ifndef RENDERING
-			SDLHandleEvents(isRunning, glm::ivec2(width, height), cursorPos, cameraAngle, deltaCamPos, isReset, isWindowFocused);
-			deltaCamPos *= 3.0f / FPS;
-			UpdateCameraPos(cameraPos, deltaCamPos, glm::radians(cameraAngle));
-			glm::ivec2 tempWindowSize{};
-			SDL_GetWindowSize(window, &tempWindowSize.x, &tempWindowSize.y);
-			if ((tempWindowSize.x != width) || (tempWindowSize.y != height)) {
-				width = tempWindowSize.x;
-				height = tempWindowSize.y;
-				isWinSizeChanged = true;
+#ifndef RENDERING
+		SDLHandleEvents(isRunning, glm::ivec2(width, height), cursorPos, cameraAngle, deltaCamPos, isReset, isWindowFocused);
+		deltaCamPos *= 3.0f / FPS;
+		UpdateCameraPos(cameraPos, deltaCamPos, glm::radians(cameraAngle));
+		glm::ivec2 tempWindowSize{};
+		SDL_GetWindowSize(window, &tempWindowSize.x, &tempWindowSize.y);
+		if ((tempWindowSize.x != width) || (tempWindowSize.y != height)) {
+			width = tempWindowSize.x;
+			height = tempWindowSize.y;
+			isWinSizeChanged = true;
+		}
+
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplSDL2_NewFrame();
+		ImGui::NewFrame();
+
+		ImGuiWindowFlags WinFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize;
+
+		{
+			ImGui::Begin("Scene", NULL, WinFlags);
+			ImGui::SetWindowPos(ImVec2(width - ImGui::GetWindowWidth(), 0));
+			ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
+			ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
+			ImGui::Text("Samples: %i", prevSamples);
+			ImGui::Text("Camera Angle: (%0.3f, %0.3f)", cameraAngle.x, cameraAngle.y);
+			ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", cameraPos.x, cameraPos.y, cameraPos.z);
+			isReset |= ImGui::DragFloat("Camera FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");
+			isReset |= ImGui::DragFloat("Shutter Speed", &shutterSpeed, 0.00025f, 0.00025f, 0.05f, "%0.5f");
+			isReset |= ImGui::DragFloat("Aperture Size", &apertureSize, 0.5f, 1.0f, 50.0f, "%0.2f");
+			isReset |= ImGui::DragInt("Paths/F/P", &samplesPerFrame, 0.02f);
+			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
+			ImGui::Separator();
+
+			if (ImGui::CollapsingHeader("Objects")) {
+				static int objectsSelection = 0;
+
+				if (ImGui::Button("Add New Sphere")) {
+					spheres.push_back(newsphere);
+				}
+				if (ImGui::Button("Add New Plane")) {
+					planes.push_back(newplane);
+				}
+				ImGui::Separator();
+
+				if (objectsSelection < spheres.size()) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectsSelection + 1);
+					isReset |= ImGui::DragFloat3("Position", spheres[objectsSelection].pos, 0.01f);
+					isReset |= ImGui::DragFloat("Radius", &spheres[objectsSelection].radius, 0.01f);
+					isReset |= ImGui::DragInt("Material ID", &spheres[objectsSelection].materialID, 0.02f);
+				}
+				if (objectsSelection < ((spheres.size() + planes.size())) && (objectsSelection > (spheres.size() - 1))) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectsSelection - spheres.size() + 1);
+					isReset |= ImGui::DragFloat3("Position", planes[objectsSelection - spheres.size()].pos, 0.01f);
+					isReset |= ImGui::DragInt("Material ID", &planes[objectsSelection - spheres.size()].materialID, 0.02f);
+				}
+				ImGui::Separator();
+
+				if (ImGui::BeginTable("Objects Table", 1)) {
+					ImGui::TableSetupColumn("Object");
+					ImGui::TableHeadersRow();
+					ItemsTable("Sphere %i", objectsSelection, 0, (int)spheres.size());
+					ItemsTable("Plane %i", objectsSelection, (int)spheres.size(), (int)planes.size());
+					ImGui::EndTable();
+				}
 			}
+			ImGui::Separator();
 
-			ImGui_ImplOpenGL3_NewFrame();
-			ImGui_ImplSDL2_NewFrame();
-			ImGui::NewFrame();
+			if (ImGui::CollapsingHeader("Materials")) {
+				static int materialsSelection = 0;
 
-			ImGuiWindowFlags WinFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize;
-
-			{
-				ImGui::Begin("Scene", NULL, WinFlags);
-				ImGui::SetWindowPos(ImVec2(width - ImGui::GetWindowWidth(), 0));
-				ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
-				ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
-				ImGui::Text("Paths/Pixel: %i", prevSFrame * pathsPerFP);
-				ImGui::Text("Camera Angle: (%0.3f, %0.3f)", cameraAngle.x, cameraAngle.y);
-				ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", cameraPos.x, cameraPos.y, cameraPos.z);
-				isReset |= ImGui::DragFloat("Camera FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");
-				isReset |= ImGui::DragFloat("Shutter Speed", &shutterSpeed, 0.00025f, 0.00025f, 0.05f, "%0.5f");
-				isReset |= ImGui::DragFloat("Aperture Size", &apertureSize, 0.5f, 1.0f, 50.0f, "%0.2f");
-				isReset |= ImGui::DragInt("Paths/F/P", &pathsPerFP, 0.02f);
-				isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
-				ImGui::Separator();
-
-				if (ImGui::CollapsingHeader("Objects")) {
-					static int objectsSelection = 0;
-
-					if (ImGui::Button("Add New Sphere")) {
-						spheres.push_back(newsphere);
-					}
-					if (ImGui::Button("Add New Plane")) {
-						planes.push_back(newplane);
-					}
-					ImGui::Separator();
-
-					if (objectsSelection < spheres.size()) {
-						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectsSelection + 1);
-						isReset |= ImGui::DragFloat3("Position", spheres[objectsSelection].pos, 0.01f);
-						isReset |= ImGui::DragFloat("Radius", &spheres[objectsSelection].radius, 0.01f);
-						isReset |= ImGui::DragInt("Material ID", &spheres[objectsSelection].materialID, 0.02f);
-					}
-					if (objectsSelection < ((spheres.size() + planes.size())) && (objectsSelection > (spheres.size() - 1))) {
-						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectsSelection - spheres.size() + 1);
-						isReset |= ImGui::DragFloat3("Position", planes[objectsSelection - spheres.size()].pos, 0.01f);
-						isReset |= ImGui::DragInt("Material ID", &planes[objectsSelection - spheres.size()].materialID, 0.02f);
-					}
-					ImGui::Separator();
-
-					if (ImGui::BeginTable("Objects Table", 1)) {
-						ImGui::TableSetupColumn("Object");
-						ImGui::TableHeadersRow();
-						ItemsTable("Sphere %i", objectsSelection, 0, (int)spheres.size());
-						ItemsTable("Plane %i", objectsSelection, (int)spheres.size(), (int)planes.size());
-						ImGui::EndTable();
-					}
+				if (ImGui::Button("Add New Material")) {
+					materials.push_back(newmaterial);
+					isReset = true;
 				}
 				ImGui::Separator();
 
-				if (ImGui::CollapsingHeader("Materials")) {
-					static int materialsSelection = 0;
+				ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialsSelection + 1);
+				bool tmpIsInvert;
+				ImGui::Text("Reflection");
+				ImGui::PushID("Reflection");
+				isReset |= ImGui::DragFloat("Peak Wavelength", &materials[materialsSelection].reflection[0], 1.0f, 200.0f, 900.0f);
+				isReset |= ImGui::DragFloat("Spectrum Width", &materials[materialsSelection].reflection[1], 0.5f, 0.0f, 100.0f);
+				tmpIsInvert = (bool)materials[materialsSelection].reflection[2];
+				isReset |= ImGui::Checkbox("Invert", &tmpIsInvert);
+				materials[materialsSelection].reflection[2] = (float)tmpIsInvert;
+				ImGui::PopID();
+				ImGui::Text("Emission");
+				ImGui::PushID("Emission");
+				isReset |= ImGui::DragFloat("Peak Wavelength", &materials[materialsSelection].emission[0], 1.0f, 200.0f, 900.0f);
+				isReset |= ImGui::DragFloat("Spectrum Width", &materials[materialsSelection].emission[1], 0.5f, 0.0f, 100.0f);
+				tmpIsInvert = (bool)materials[materialsSelection].emission[2];
+				isReset |= ImGui::Checkbox("Invert", &tmpIsInvert);
+				materials[materialsSelection].emission[2] = (float)tmpIsInvert;
+				isReset |= ImGui::DragFloat("Luminosity", &materials[materialsSelection].emission[3], 0.1f);
+				ImGui::PopID();
+				ImGui::Separator();
 
-					if (ImGui::Button("Add New Material")) {
-						materials.push_back(newmaterial);
-						isReset = true;
-					}
-					ImGui::Separator();
-
-					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialsSelection + 1);
-					bool tmpIsInvert;
-					ImGui::Text("Reflection");
-					ImGui::PushID("Reflection");
-					isReset |= ImGui::DragFloat("Peak Wavelength", &materials[materialsSelection].reflection[0], 1.0f, 200.0f, 900.0f);
-					isReset |= ImGui::DragFloat("Spectrum Width", &materials[materialsSelection].reflection[1], 0.5f, 0.0f, 100.0f);
-					tmpIsInvert = (bool)materials[materialsSelection].reflection[2];
-					isReset |= ImGui::Checkbox("Invert", &tmpIsInvert);
-					materials[materialsSelection].reflection[2] = (float)tmpIsInvert;
-					ImGui::PopID();
-					ImGui::Text("Emission");
-					ImGui::PushID("Emission");
-					isReset |= ImGui::DragFloat("Peak Wavelength", &materials[materialsSelection].emission[0], 1.0f, 200.0f, 900.0f);
-					isReset |= ImGui::DragFloat("Spectrum Width", &materials[materialsSelection].emission[1], 0.5f, 0.0f, 100.0f);
-					tmpIsInvert = (bool)materials[materialsSelection].emission[2];
-					isReset |= ImGui::Checkbox("Invert", &tmpIsInvert);
-					materials[materialsSelection].emission[2] = (float)tmpIsInvert;
-					isReset |= ImGui::DragFloat("Luminosity", &materials[materialsSelection].emission[3], 0.1f);
-					ImGui::PopID();
-					ImGui::Separator();
-
-					if (ImGui::BeginTable("Materials Table", 1)) {
-						ImGui::TableSetupColumn("Materials");
-						ImGui::TableHeadersRow();
-						ItemsTable("Material %i", materialsSelection, 0, (int)materials.size());
-						ImGui::EndTable();
-					}
+				if (ImGui::BeginTable("Materials Table", 1)) {
+					ImGui::TableSetupColumn("Materials");
+					ImGui::TableHeadersRow();
+					ItemsTable("Material %i", materialsSelection, 0, (int)materials.size());
+					ImGui::EndTable();
 				}
+			}
 				
-				isWindowFocused = ImGui::IsWindowFocused();
-				ImGui::End();
-			}
+			isWindowFocused = ImGui::IsWindowFocused();
+			ImGui::End();
+		}
 
-			ImGui::Render();
+		ImGui::Render();
 
-		#endif
+#endif
 
 		if (isWinSizeChanged) {
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 			glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+
+#ifndef RENDERING
 		if (isWinSizeChanged) {
 			glViewport(0, 0, width, height);
 			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -465,13 +468,14 @@ int main(int argc, char* argv[])
 			frame = 1;
 		}
 		if (isReset || isWinSizeChanged) {
-			sFrame = 1;
+			samples = 1;
 		}
-		
+#endif
+
 		glUseProgram(shaderProgram);
 		glUniform1i(glGetUniformLocation(shaderProgram, "frame"), frame);
-		glUniform1i(glGetUniformLocation(shaderProgram, "sFrame"), sFrame);
-		glUniform1i(glGetUniformLocation(shaderProgram, "prevSFrame"), prevSFrame);
+		glUniform1i(glGetUniformLocation(shaderProgram, "samples"), samples);
+		glUniform1i(glGetUniformLocation(shaderProgram, "prevSamples"), prevSamples);
 		if (isWinSizeChanged || isBeginning) {
 			glUniform2i(glGetUniformLocation(shaderProgram, "resolution"), width, height);
 		}
@@ -480,7 +484,7 @@ int main(int argc, char* argv[])
 			glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
 			glUniform1f(glGetUniformLocation(shaderProgram, "FOV"), FOV);
 			glUniform1f(glGetUniformLocation(shaderProgram, "apertureSize"), apertureSize);
-			glUniform1i(glGetUniformLocation(shaderProgram, "pathsPerFP"), pathsPerFP);
+			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ1964"), sizeof(CIEXYZ1964) / sizeof(float), CIEXYZ1964);
 			int numObjects[] = { (int)spheres.size(), (int)planes.size() };
@@ -518,14 +522,15 @@ int main(int argc, char* argv[])
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glUseProgram(frameBufferProgram);
 		glUniform1i(glGetUniformLocation(frameBufferProgram, "frame"), frame);
-		glUniform1i(glGetUniformLocation(frameBufferProgram, "sFrame"), sFrame);
+		glUniform1i(glGetUniformLocation(frameBufferProgram, "samples"), samples);
 		if (isWinSizeChanged || isBeginning) {
 			glUniform2i(glGetUniformLocation(frameBufferProgram, "resolution"), width, height);
 		}
 		glBindVertexArray(rectVAO);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
-		
-		prevSFrame = sFrame;
+
+#ifndef RENDERING
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		FPS = 1.0f / io.DeltaTime;
 		if (frames.size() > 100) {
@@ -537,39 +542,37 @@ int main(int argc, char* argv[])
 		else {
 			frames.push_back(1000.0f / FPS);
 		}
+#endif
 
-		frame++;
-		sFrame++;
-		isBeginning = false;
-
-		#ifndef RENDERING
-			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		#endif
 		SDL_GL_SwapWindow(window);
 
-		#ifdef RENDERING
-			uint64_t end = SDL_GetTicks64();
-			int samplesDone = frame * pathsPerFP;
-			double timeElapsed = (double)(end - start) / 1000.0;
-			double percentageDone = (double)samplesDone / (double)SAMPLES;
-			double timeRemaining = (1.0 - percentageDone) * timeElapsed / percentageDone;
-			std::cout << "Samples: " << samplesDone << " / " << SAMPLES << "\t" << "Time Elapsed: " << timeElapsed << "s" << "\t" << "Time Remaining: " << timeRemaining << "s" << " \r";
-			bool isRenderingDone = (samplesDone + 1) > SAMPLES;
-			if (isRenderingDone) {
-				std::cout << std::endl << "Rendering Completed In " << timeElapsed << "s." << std::endl;
+#ifdef RENDERING
+		uint64_t end = SDL_GetTicks64();
+		double timeElapsed = (double)(end - start) / 1000.0;
+		double percentageDone = (double)frame / (double)NUMSAMPLES;
+		double timeRemaining = (1.0 - percentageDone) * timeElapsed / percentageDone;
+		std::cout << "Samples: " << frame << " / " << NUMSAMPLES << "\t" << "Time Elapsed: " << timeElapsed << "s" << "\t" << "Time Remaining: " << timeRemaining << "s" << " \r";
+		bool isRenderingDone = (frame + 1) > NUMSAMPLES;
+		if (isRenderingDone) {
+			std::cout << std::endl << "Rendering Completed In " << timeElapsed << "s." << std::endl;
 				
-				unsigned char* framePixels = new unsigned char[width * height * 4];
-				glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, framePixels);
-				SDL_Surface* frameSurface = SDL_CreateRGBSurfaceFrom(framePixels, width, height, 8 * 4, width * 4, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
-				flipSurface(frameSurface);
-				IMG_SavePNG(frameSurface, "render.png");
-				std::cout << "Rendered Image Has Been Successfully Saved." << std::endl;
-				SDL_FreeSurface(frameSurface);
-				delete[] framePixels;
+			unsigned char* framePixels = new unsigned char[width * height * 4];
+			glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, framePixels);
+			SDL_Surface* frameSurface = SDL_CreateRGBSurfaceFrom(framePixels, width, height, 8 * 4, width * 4, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
+			flipSurface(frameSurface);
+			IMG_SavePNG(frameSurface, "render.png");
+			std::cout << "Rendered Image Has Been Successfully Saved." << std::endl;
+			SDL_FreeSurface(frameSurface);
+			delete[] framePixels;
 
-				break;
-			}
-		#endif
+			break;
+		}
+#endif
+
+		prevSamples = samples;
+		frame += samplesPerFrame;
+		samples += samplesPerFrame;
+		isBeginning = false;
 	}
 
 	ImGui_ImplOpenGL3_Shutdown();

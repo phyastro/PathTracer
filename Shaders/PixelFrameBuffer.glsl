@@ -4,7 +4,7 @@ layout(location = 0) out vec4 FragColor;
 
 uniform ivec2 resolution;
 uniform int frame;
-uniform int sFrame;
+uniform int samples;
 uniform sampler2D screenTexture;
 
 vec3 XYZToRGB(vec3 XYZ){
@@ -19,14 +19,14 @@ vec3 Gamma(vec3 x, float y) {
 	return pow(x, 1.0 / vec3(y));
 }
 
+// Biophotometric Tonemapping by Ted
 vec3 BioPhotometricTonemapping(vec3 x) {
-	// Biophotometric Tonemapping by Ted
 	return exp(-1.0 / x);
 }
 
 void main() {
 	vec3 color = vec3(0.0);
-	color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz / sFrame;
+	color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz / samples;
 	color = Gamma(BioPhotometricTonemapping(max(XYZToRGB(color), 0.0)), 2.2);
 	FragColor = vec4(color, 1.0);
 }
