@@ -98,7 +98,7 @@ float SphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3
 	if (t < 1e-4) {
 		t = 1e6;
 	}
-	normal = normalize((localorigin + dir*t) * radius);
+	normal = normalize(fma(dir, vec3(t), localorigin) * radius);
 	return t;
 }
 
@@ -265,7 +265,7 @@ float RefractiveIndexWavelength(float l, float n, float l_n, float s){
 	// My Own Function For Refractive Index
 	// Function Is Based On Observation How Graph Of Mathematrical Functions Look Like
 	// Made To Produce Change In Refractive Index Based On Wavelength
-	return s * ((l_n / l) - 1.0) + n;
+	return fma(s, (l_n / l) - 1.0, n);
 }
 
 float Emit(float l, material mat) {
@@ -281,10 +281,10 @@ float TraceRay(in float l, inout float rayradiance, inout vec3 origin, inout vec
 	material mat;
 	float hitdist = Intersection(origin, dir, normal, mat);
 	if (hitdist < maxdist) {
-		origin = origin + dir * hitdist;
+		origin = fma(dir, vec3(hitdist), origin);
 		dir = RandomCosineDirectionHemisphere(seed, normal);
 		if (mat.emission.w > 0.0) {
-			radiance += Emit(l, mat) * rayradiance;
+			radiance = fma(Emit(l, mat), rayradiance, radiance);
 			isTerminate = true;
 		}
 		rayradiance *= SpectralPowerDistribution(l, mat.reflection.x, mat.reflection.y, int(mat.reflection.z));
@@ -314,7 +314,7 @@ float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
 vec3 Scene(uint x, uint y, uint k) {
 	uint seed = GenerateSeed(x, y, k);
 	float tan_fov = tan(radians(FOV / 2.0));
-	vec2 uv = ((vec2(x, y) * 2.0 - resolution) / resolution.y) * tan_fov;
+	vec2 uv = ((2.0 * vec2(x, y) - resolution) / resolution.y) * tan_fov;
 	// SSAA
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
 	// Fix Camera Angle For The Rotation Function

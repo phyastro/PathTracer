@@ -149,7 +149,7 @@ void AttachShader(GLuint program, GLenum type, const char* code) {
 	glShaderSource(shader, 1, &code, NULL);
 	glCompileShader(shader);
 	glAttachShader(program, shader);
-	glDeleteShader(shader);
+	//glDeleteShader(shader);
 }
 
 const std::string ReadFile(const char* FileName) {
