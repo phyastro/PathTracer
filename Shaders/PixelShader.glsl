@@ -1,5 +1,4 @@
 #version 460 core
-#extension GL_EXT_shader_explicit_arithmetic_types : require
 
 layout(location = 0) out vec4 Fragcolor;
 
@@ -209,7 +208,7 @@ void LCG(inout uint seed) {
 	// LCG PRNG Test
 	// Produces Significant Artifacts Especially On The Light Sources And 3ms Slower(250FPS->100FPS)
 	// Therefore, This Method Can Get Discarded
-	seed = uint(mod(double(seed) * 983478477ul, 0xFFFFFFFFu));
+	seed = uint(mod(double(seed) * 983478477u, 0xFFFFFFFFu));
 }
 */
 
@@ -227,7 +226,7 @@ uint GenerateSeed(uint x, uint y, uint k) {
 	// That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result
 	uint seed = (frame - 1) + k;
 	PCG32(seed);
-	seed = uint(mod(uint64_t(seed) + uint64_t(x + resolution.x * y), 0xFFFFFFFFul));
+	seed = uint(mod(double(seed) + double(x + resolution.x * y), 0xFFFFFFFFu));
 	return seed;
 }
 

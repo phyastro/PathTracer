@@ -148,8 +148,15 @@ void AttachShader(GLuint program, GLenum type, const char* code) {
 	GLuint shader = glCreateShader(type);
 	glShaderSource(shader, 1, &code, NULL);
 	glCompileShader(shader);
+	GLint success;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+	if (success != GL_TRUE) {
+		char msg[1024];
+		glGetShaderInfoLog(shader, 1024, NULL, msg);
+		std::cout << "Shader Compile Error: " << std::endl << msg << std::endl;
+	}
 	glAttachShader(program, shader);
-	//glDeleteShader(shader);
+	glDeleteShader(shader);
 }
 
 const std::string ReadFile(const char* FileName) {
@@ -272,7 +279,7 @@ int main(int argc, char* argv[])
 
 	GLenum FBOStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (FBOStatus != GL_FRAMEBUFFER_COMPLETE) {
-		std::cout << "FrameBuffer Error: " << FBOStatus << std::endl;
+		std::cout << "FrameBuffer Error: " << std::endl << FBOStatus << std::endl;
 	}
 
 	glLinkProgram(shaderProgram);
@@ -281,7 +288,7 @@ int main(int argc, char* argv[])
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetProgramInfoLog(shaderProgram, 1024, NULL, msg);
-		std::cout << "Shader Link Error: " << msg << std::endl;
+		std::cout << "Shader Link Error: " << std::endl << msg << std::endl;
 		return 0;
 	}
 
@@ -290,7 +297,7 @@ int main(int argc, char* argv[])
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetProgramInfoLog(frameBufferProgram, 1024, NULL, msg);
-		std::cout << "FrameBuffer Link Error: " << msg << std::endl;
+		std::cout << "FrameBuffer Link Error: " << std::endl << msg << std::endl;
 		return 0;
 	}
 
