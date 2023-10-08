@@ -15,7 +15,7 @@
 #include <vector>
 
 //#define RENDERING
-const int NUMSAMPLES = 50000;
+const int NUMSAMPLES = 1000;
 const int NUMSAMPLESPERFRAME = 20;
 const int PATHLENGTH = 5;
 
@@ -370,7 +370,7 @@ int main(int argc, char* argv[])
 			isReset |= ImGui::DragFloat("Camera FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");
 			isReset |= ImGui::DragFloat("Shutter Speed", &shutterSpeed, 0.00025f, 0.00025f, 0.05f, "%0.5f");
 			isReset |= ImGui::DragFloat("Aperture Size", &apertureSize, 0.5f, 1.0f, 50.0f, "%0.2f");
-			isReset |= ImGui::DragInt("Paths/F/P", &samplesPerFrame, 0.02f);
+			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
 			ImGui::Separator();
 
@@ -465,10 +465,10 @@ int main(int argc, char* argv[])
 			glViewport(0, 0, width, height);
 			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 			glClear(GL_COLOR_BUFFER_BIT);
-			frame = 1;
+			frame = samplesPerFrame;
 		}
 		if (isReset || isWinSizeChanged) {
-			samples = 1;
+			samples = samplesPerFrame;
 		}
 #endif
 

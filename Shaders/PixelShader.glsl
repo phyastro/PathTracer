@@ -337,15 +337,20 @@ vec3 Scene(uint x, uint y, uint k) {
 	return color;
 }
 
-void main() {
-	vec4 color = vec4(0.0);
-	for (uint i = 0; i < samplesPerFrame; i++) {
-		color.xyz += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
-	}
-	if ((samples < 2) && (frame > 1)) {
-		color = (0.7 * texture(screenTexture, gl_FragCoord.xy / resolution) / prevSamples) + (0.3 * color);
+void Accumulate(inout vec3 color, in float weight) {
+	// Temporal Accumulation Based On Weight When Scene Is Dynamic And Accumulation When Scene Is Static
+	if ((samples == samplesPerFrame) && (frame > samplesPerFrame)) {
+		color = (weight * color) + ((1.0 - weight) * texture(screenTexture, gl_FragCoord.xy / resolution).xyz * samplesPerFrame / prevSamples);
 	} else {
-		color = texture(screenTexture, gl_FragCoord.xy / resolution) + color;
+		color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz + color;
 	}
-	Fragcolor = color;
+}
+
+void main() {
+	vec3 color = vec3(0.0);
+	for (uint i = 0; i < samplesPerFrame; i++) {
+		color += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
+	}
+	Accumulate(color, 0.3);
+	Fragcolor = vec4(color, 1.0);
 }
