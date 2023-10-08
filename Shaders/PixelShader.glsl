@@ -204,9 +204,13 @@ void PCG32(inout uint seed) {
 	seed = (word >> 22u) ^ word;
 }
 
+/*
+// LCG PRNG Try and it produces significant artifacts especially on the light sources and 3 ms slowdown(250FPS->100FPS)
+// therefore, this method can get discarded.
 void LCG(inout uint seed) {
 	seed = uint(mod(double(seed) * 983478477ul, 0xFFFFFFFFu));
 }
+*/
 
 float RandomFloat(inout uint seed) {
 	PCG32(seed);
@@ -226,16 +230,14 @@ uint GenerateSeed(uint x, uint y, uint k) {
 	return seed;
 }
 
-float RandomNormal(inout uint seed) {
-	return cos(2.0 * pi * RandomFloat(seed)) * sqrt(-2.0 * log(RandomFloat(seed)) / log(10.0));
-}
-
 vec3 UniformRandomPointsUnitSphere(inout uint seed){
-	// Generate Random Points On Unit Sphere
-	float x = RandomNormal(seed);
-	float y = RandomNormal(seed);
-	float z = RandomNormal(seed);
-	return normalize(vec3(x, y, z));
+	float phi = 2.0 * pi * RandomFloat(seed);
+	float sintheta = 2.0 * RandomFloat(seed) - 1.0;
+	float costheta = sqrt(1.0 - sintheta * sintheta);
+	float x = cos(phi) * costheta;
+	float y = sin(phi) * costheta;
+	float z = sintheta;
+	return vec3(x, y, z);
 }
 
 vec3 RandomCosineDirectionHemisphere(inout uint seed, vec3 normal){
@@ -336,7 +338,7 @@ void main() {
 	}
 	color.xyz /= pathsPerFP;
 	if (sFrame < 2) {
-		color = 0.5 * texture(screenTexture, gl_FragCoord.xy / resolution) / prevSFrame + 0.5 * color;
+		color = (0.6 * texture(screenTexture, gl_FragCoord.xy / resolution) / prevSFrame) + 0.4 * color;
 	} else {
 		color = texture(screenTexture, gl_FragCoord.xy / resolution) + color;
 	}
