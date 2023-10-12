@@ -324,8 +324,8 @@ int main(int argc, char* argv[])
 	int prevSamples = samplesPerFrame;
 	float FPS = 60.0f;
 	float FOV = 60.0f;
-	float shutterSpeed = 0.00025f;
-	float apertureSize = 1.0f;
+	float persistance = 0.0625f;
+	float exposure = 1.0f;
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	bool isBeginning = true;
@@ -375,8 +375,8 @@ int main(int argc, char* argv[])
 			ImGui::Text("Camera Angle: (%0.3f, %0.3f)", cameraAngle.x, cameraAngle.y);
 			ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", cameraPos.x, cameraPos.y, cameraPos.z);
 			isReset |= ImGui::DragFloat("Camera FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");
-			isReset |= ImGui::DragFloat("Shutter Speed", &shutterSpeed, 0.00025f, 0.00025f, 0.05f, "%0.5f");
-			isReset |= ImGui::DragFloat("Aperture Size", &apertureSize, 0.5f, 1.0f, 50.0f, "%0.2f");
+			isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
+			isReset |= ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
 			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
 			ImGui::Separator();
@@ -483,6 +483,7 @@ int main(int argc, char* argv[])
 		glUniform1i(glGetUniformLocation(shaderProgram, "frame"), frame);
 		glUniform1i(glGetUniformLocation(shaderProgram, "samples"), samples);
 		glUniform1i(glGetUniformLocation(shaderProgram, "prevSamples"), prevSamples);
+		glUniform1f(glGetUniformLocation(shaderProgram, "FPS"), FPS);
 		if (isWinSizeChanged || isBeginning) {
 			glUniform2i(glGetUniformLocation(shaderProgram, "resolution"), width, height);
 		}
@@ -490,7 +491,8 @@ int main(int argc, char* argv[])
 			glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), glm::radians(cameraAngle.x), glm::radians(cameraAngle.y));
 			glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
 			glUniform1f(glGetUniformLocation(shaderProgram, "FOV"), FOV);
-			glUniform1f(glGetUniformLocation(shaderProgram, "apertureSize"), apertureSize);
+			glUniform1f(glGetUniformLocation(shaderProgram, "persistance"), persistance);
+			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), exposure);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ1964"), sizeof(CIEXYZ1964) / sizeof(float), CIEXYZ1964);

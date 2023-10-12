@@ -6,10 +6,12 @@ uniform ivec2 resolution;
 uniform int frame;
 uniform int samples;
 uniform int prevSamples;
+uniform float FPS;
 uniform vec2 cameraAngle;
 uniform vec3 cameraPos;
 uniform float FOV;
-uniform float apertureSize;
+uniform float persistance;
+uniform float exposure;
 uniform int samplesPerFrame;
 uniform int pathLength;
 uniform float CIEXYZ1964[1413];
@@ -331,15 +333,23 @@ vec3 Scene(uint x, uint y, uint k) {
 	// Chromatic Aberration
 	dir = refract(dir, -forward, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.025));
 	color += (TracePath(l, origin, dir, seed) * WaveToXYZ(l)) / SpectralPDF(380.0, 720.0);
-	color *= apertureSize * apertureSize;
+	color *= exposure;
 
 	return color;
 }
 
-void Accumulate(inout vec3 color, in float weight) {
-	// Temporal Accumulation Based On Weight When Scene Is Dynamic And Accumulation When Scene Is Static
+void Accumulate(inout vec3 color) {
+	// Temporal Accumulation Based On Given Parameters When Scene Is Dynamic And Accumulation When Scene Is Static
+	// Simulation Of Persistance Using Temporal Accumulation
+	// The Idea Is To Multiply Color Value By 1/256 In A Number Of Frames
+	// To Do That, Multiply A Constant[0, 1] Each Frame
+	// Find That Constant Based On Given Parameters
+	// Then We Get, x^numFrames = 2^(-8) Where x Is Multiply Constant
+	// Also We Know That, numFrames = FPS * time(The Amount Of Time Will Be Needed To Reach 1/256)
+	// Therefore, x = 2^(-8 / (FPS*time))
+	float weight = pow(2.0, -8.0 / (FPS * persistance));
 	if ((samples == samplesPerFrame) && (frame > samplesPerFrame)) {
-		color = (weight * color) + ((1.0 - weight) * texture(screenTexture, gl_FragCoord.xy / resolution).xyz * samplesPerFrame / prevSamples);
+		color = ((1.0 - weight) * color) + (weight * texture(screenTexture, gl_FragCoord.xy / resolution).xyz * samplesPerFrame / prevSamples);
 	} else {
 		color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz + color;
 	}
@@ -350,6 +360,6 @@ void main() {
 	for (uint i = 0; i < samplesPerFrame; i++) {
 		color += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
 	}
-	Accumulate(color, 0.3);
+	Accumulate(color);
 	Fragcolor = vec4(color, 1.0);
 }
