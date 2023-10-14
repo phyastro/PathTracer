@@ -175,10 +175,11 @@ float CarvedSphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, ou
 		if (hitpos2.y > 1.0) {
 			t2 = 1e6;
 		}
-		if (t1 < t2) {
+		if (t1 > 0.0) {
 			t = t1;
 			isOutside = 1;
-		} else {
+		}
+		if (t2 < t) {
 			t = t2;
 			isOutside = -1;
 		}
@@ -392,7 +393,7 @@ vec3 Scene(uint x, uint y, uint k) {
 	//vec3 normal = vec3(0.0);
 	//material mat;
 	//Intersection(origin, dir, normal, mat);
-	//color += normal * 0.5 + 0.5;
+	//color += normal;
 
 	return color;
 }
