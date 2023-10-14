@@ -15,9 +15,10 @@
 #include <vector>
 
 //#define RENDERING
-const int NUMSAMPLES = 1000;
-const int NUMSAMPLESPERFRAME = 20;
+const int NUMSAMPLES = 50000;
+const int NUMSAMPLESPERFRAME = 10;
 const int PATHLENGTH = 5;
+const float EXPOSURE = 1.0f;
 
 struct sphere {
 	float pos[3];
@@ -39,6 +40,8 @@ void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	// Camera
 	cameraPos = glm::vec3(6.332f, 3.855f, 3.140f);
 	cameraAngle = glm::vec2(225.093f, -31.512f);
+	//cameraPos = glm::vec3(3.0f, 1.0f, -1.0f);
+	//cameraAngle = glm::vec2(288.4349488229f, 0.0f);
 
 	// Spheres
 	sphere sphere1 = { { 0.0f, 1.0f, 0.0f }, 1.0f, 1 };
@@ -314,11 +317,6 @@ int main(int argc, char* argv[])
 	int samplesPerFrame = 1;
 	int pathLength = 5;
 	uint64_t start = 0;
-#ifdef RENDERING
-	samplesPerFrame = NUMSAMPLESPERFRAME;
-	pathLength = PATHLENGTH;
-	start = SDL_GetTicks64();
-#endif
 	int frame = samplesPerFrame;
 	int samples = samplesPerFrame;
 	int prevSamples = samplesPerFrame;
@@ -329,6 +327,12 @@ int main(int argc, char* argv[])
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	bool isBeginning = true;
+#ifdef RENDERING
+	samplesPerFrame = NUMSAMPLESPERFRAME;
+	pathLength = PATHLENGTH;
+	start = SDL_GetTicks64();
+	exposure = EXPOSURE;
+#endif
 #ifndef RENDERING
 	glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
 	glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);

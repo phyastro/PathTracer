@@ -90,16 +90,23 @@ float SphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3
 	float c = dot(localorigin, localorigin) - (radius * radius);
 	float discriminant = b * b - 4.0 * a * c;
 	float t = 1e6;
+	int isOutside = 1;
 	if (discriminant >= 0.0) {
-		t = (-b - sqrt(discriminant)) / (2.0 * a);
-		if (t < 0.0) {
-			t = (-b + sqrt(discriminant)) / (2.0 * a);
+		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+		if (t1 > 0.0) {
+			t = t1;
+			isOutside = 1;
+		} else {
+			t = t2;
+			isOutside = -1;
 		}
 	}
 	if (t < 1e-4) {
 		t = 1e6;
+		isOutside = 1;
 	}
-	normal = normalize(fma(dir, vec3(t), localorigin) * radius);
+	normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
 	return t;
 }
 
@@ -149,6 +156,52 @@ float BoxIntersection(vec3 origin, vec3 dir, vec3 size, vec3 pos, out vec3 norma
 	return t;
 }
 
+float CarvedSphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3 normal) {
+	vec3 localorigin = origin - pos;
+	float a = dot(dir, dir);
+	float b = 2.0 * dot(dir, localorigin);
+	float c = dot(localorigin, localorigin) - (radius * radius);
+	float discriminant = b * b - 4.0 * a * c;
+	float t = 1e6;
+	int isOutside = 1;
+	if (discriminant >= 0.0) {
+		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+		vec3 hitpos1 = origin + dir * max(t1, 0.0);
+		vec3 hitpos2 = origin + dir * max(t2, 0.0);
+		if (hitpos1.y > 1.0) {
+			t1 = 1e6;
+		}
+		if (hitpos2.y > 1.0) {
+			t2 = 1e6;
+		}
+		if (t1 < t2) {
+			t = t1;
+			isOutside = 1;
+		} else {
+			t = t2;
+			isOutside = -1;
+		}
+	}
+	if (t < 1e-4) {
+		t = 1e6;
+		isOutside = 1;
+	}
+	normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
+	return t;
+}
+
+void LensIntersection(inout float hitdist, vec3 origin, vec3 dir, vec3 pos, float radius, inout vec3 normal, inout material mat) {
+	vec3 norm = vec3(0.0);
+	float t = CarvedSphereIntersection(origin, dir, pos, radius, norm);
+	vec3 hitpos = origin + dir * t;
+	if (t < hitdist) {
+		hitdist = t;
+		normal = norm;
+		mat = GetMaterial(0);
+	}
+}
+
 float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 	float hitdist = 1e6;
 	
@@ -195,6 +248,8 @@ float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 		}
 	}
 	*/
+	LensIntersection(hitdist, origin, dir, vec3(3.0, 1.0, 0.0), 1.0, normal, mat);
+
 	return hitdist;
 }
 
@@ -334,6 +389,10 @@ vec3 Scene(uint x, uint y, uint k) {
 	dir = refract(dir, -forward, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.025));
 	color += (TracePath(l, origin, dir, seed) * WaveToXYZ(l)) / SpectralPDF(380.0, 720.0);
 	color *= exposure;
+	//vec3 normal = vec3(0.0);
+	//material mat;
+	//Intersection(origin, dir, normal, mat);
+	//color += normal * 0.5 + 0.5;
 
 	return color;
 }
