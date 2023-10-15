@@ -94,13 +94,8 @@ float SphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3
 	if (discriminant >= 0.0) {
 		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
 		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-		if (t1 > 0.0) {
-			t = t1;
-			isOutside = 1;
-		} else {
-			t = t2;
-			isOutside = -1;
-		}
+		t = (t1 > 0.0) ? t1 : t2;
+		isOutside = (t1 > 0.0) ? 1 : -1;
 	}
 	if (t < 1e-4) {
 		t = 1e6;
@@ -113,9 +108,7 @@ float SphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3
 float PlaneIntersection(vec3 origin, vec3 dir, vec3 pos, out vec3 normal) {
 	vec3 localorigin = origin - pos;
 	float t = -localorigin.y / dir.y;
-	if (t < 1e-4) {
-		t = 1e6;
-	}
+	t = (t < 1e-4) ? 1e6 : t;
 	normal = vec3(0.0, 1.0, 0.0);
 	normal = faceforward(normal, dir, normal);
 	return t;
@@ -123,7 +116,7 @@ float PlaneIntersection(vec3 origin, vec3 dir, vec3 pos, out vec3 normal) {
 
 // Box Intersection By iq
 // https://www.shadertoy.com/view/ld23DV
-float BoxIntersection(vec3 origin, vec3 dir, vec3 size, vec3 pos, out vec3 normal) {
+float BoxIntersection(vec3 origin, vec3 dir, vec3 pos, vec3 size, out vec3 normal) {
 	vec3 localorigin = origin - pos;
 	vec3 m = 1.0 / dir;
 	vec3 n = m * localorigin;
@@ -157,7 +150,7 @@ float BoxIntersection(vec3 origin, vec3 dir, vec3 size, vec3 pos, out vec3 norma
 }
 
 float CarvedSphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3 normal) {
-	vec3 localorigin = origin - pos;
+	vec3 localorigin = origin - pos - vec3(radius, 0.0, 0.0);
 	float a = dot(dir, dir);
 	float b = 2.0 * dot(dir, localorigin);
 	float c = dot(localorigin, localorigin) - (radius * radius);
@@ -167,18 +160,10 @@ float CarvedSphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, ou
 	if (discriminant >= 0.0) {
 		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
 		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-		vec3 hitpos1 = origin + dir * max(t1, 0.0);
-		vec3 hitpos2 = origin + dir * max(t2, 0.0);
-		if (hitpos1.y > 1.0) {
-			t1 = 1e6;
-		}
-		if (hitpos2.y > 1.0) {
-			t2 = 1e6;
-		}
-		if (t1 > 0.0) {
-			t = t1;
-			isOutside = 1;
-		}
+		float condition = 0.2 - radius;
+		t1 = (fma(dir.x, t1, localorigin.x) > condition) ? 1e6 : t1;
+		t2 = (fma(dir.x, t2, localorigin.x) > condition) ? 1e6 : t2;
+		t = (t1 > 0.0) ? t1 : t;
 		if (t2 < t) {
 			t = t2;
 			isOutside = -1;
@@ -195,7 +180,6 @@ float CarvedSphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, ou
 void LensIntersection(inout float hitdist, vec3 origin, vec3 dir, vec3 pos, float radius, inout vec3 normal, inout material mat) {
 	vec3 norm = vec3(0.0);
 	float t = CarvedSphereIntersection(origin, dir, pos, radius, norm);
-	vec3 hitpos = origin + dir * t;
 	if (t < hitdist) {
 		hitdist = t;
 		normal = norm;
@@ -234,22 +218,19 @@ float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 			mat = GetMaterial(object.materialID);
 		}
 	}
-	/*
+	
 	for (int i = 0; i < 1; i++) {
 		int offset = 0;
 		vec3 norm = vec3(0.0);
-		float intersect = BoxIntersection(origin, dir, vec3(2.0, 2.0, 2.0), vec3(0.0, 1.0, 0.0), norm);
+		float intersect = BoxIntersection(origin, dir, vec3(3.0, 0.75, 1.0), vec3(1.5, 1.5, 1.5), norm);
 		if (intersect < hitdist) {
 			hitdist = intersect;
 			normal = norm;
-			mat.emission.x = 0.0;
-			mat.emission.y = 0.0;
-			mat.emission.z = 0.0;
-			mat.emission.w = 0.0;
+			mat = GetMaterial(0);
 		}
 	}
-	*/
-	LensIntersection(hitdist, origin, dir, vec3(3.0, 1.0, 0.0), 1.0, normal, mat);
+	
+	LensIntersection(hitdist, origin, dir, vec3(2.0, 1.0, 0.0), 2.6, normal, mat);
 
 	return hitdist;
 }
