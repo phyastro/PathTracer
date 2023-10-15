@@ -14,7 +14,7 @@ uniform float persistance;
 uniform float exposure;
 uniform int samplesPerFrame;
 uniform int pathLength;
-uniform float CIEXYZ1964[1413];
+uniform float CIEXYZ2006[1323];
 uniform int numObjects[];
 uniform float objects[512];
 uniform float materials[512];
@@ -42,23 +42,23 @@ const float pi = 3.141592653589792623810034526344;
 vec3 WaveToXYZ(float wave) {
 	// Conversion From Wavelength To XYZ Using CIE1964 XYZ Table
 	vec3 XYZ = vec3(0.0, 0.0, 0.0);
-	if ((wave >= 360) && (wave <= 830)){
+	if ((wave >= 390) && (wave <= 830)){
 		// Finding The Appropriate Index Of The Table For Given Wavelength
-		int index = int((floor(wave) - 360.0));
-		vec3 t1 = vec3(CIEXYZ1964[3*index], CIEXYZ1964[3*index+1], CIEXYZ1964[3*index+2]);
-		vec3 t2 = vec3(CIEXYZ1964[3*index+3], CIEXYZ1964[3*index+4], CIEXYZ1964[3*index+5]);
+		int index = int((floor(wave) - 390.0));
+		vec3 t1 = vec3(CIEXYZ2006[3*index], CIEXYZ2006[3*index+1], CIEXYZ2006[3*index+2]);
+		vec3 t2 = vec3(CIEXYZ2006[3*index+3], CIEXYZ2006[3*index+4], CIEXYZ2006[3*index+5]);
 		// Interpolation To Make The Colors Smooth
 		XYZ = mix(t1, t2, wave - floor(wave));
 	}
 	return XYZ;
 }
 
-float SampleSpectral(float start, float end, float rand){
+float SampleSpectra(float start, float end, float rand){
 	// Uniform Inverted CDF For Sampling
 	return (end - start) * rand + start;
 }
 
-float SpectralPDF(float start, float end){
+float SpectraPDF(float start, float end){
 	// Uniform PDF
 	return 1.0 / (end - start);
 }
@@ -230,7 +230,7 @@ float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 		}
 	}
 	
-	LensIntersection(hitdist, origin, dir, vec3(2.0, 1.0, 0.0), 2.6, normal, mat);
+	LensIntersection(hitdist, origin, dir, vec3(5.0, 1.0, -4.0), 2.6, normal, mat);
 
 	return hitdist;
 }
@@ -366,10 +366,10 @@ vec3 Scene(uint x, uint y, uint k) {
 
 	vec3 color = vec3(0.0);
 
-	float l = SampleSpectral(380.0, 720.0, RandomFloat(seed));
+	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
 	// Chromatic Aberration
 	dir = refract(dir, -forward, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.025));
-	color += (TracePath(l, origin, dir, seed) * WaveToXYZ(l)) / SpectralPDF(380.0, 720.0);
+	color += (TracePath(l, origin, dir, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
 	color *= exposure;
 	//vec3 normal = vec3(0.0);
 	//material mat;

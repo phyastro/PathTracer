@@ -499,7 +499,7 @@ int main(int argc, char* argv[])
 			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), exposure);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
-			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ1964"), sizeof(CIEXYZ1964) / sizeof(float), CIEXYZ1964);
+			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
 			int numObjects[] = { (int)spheres.size(), (int)planes.size() };
 			glUniform1iv(glGetUniformLocation(shaderProgram, "numObjects"), sizeof(numObjects) / sizeof(int), numObjects);
 			std::vector <float> objectsArray;
