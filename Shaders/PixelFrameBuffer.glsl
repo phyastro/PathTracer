@@ -7,8 +7,9 @@ uniform int frame;
 uniform int samples;
 uniform sampler2D screenTexture;
 
+// http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
 vec3 XYZToRGB(vec3 XYZ){
-	// Conversion From XYZ To RGB Color Space
+	// Conversion From Illuminant E XYZ To CIE RGB Color Space
 	mat3 m = mat3(2.3706743, -0.9000405, -0.4706338, -0.5138850, 1.4253036, 0.0885814, 0.0052982, -0.0146949, 1.0093968);
 	return XYZ * m;
 }

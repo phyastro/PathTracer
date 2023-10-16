@@ -33,7 +33,7 @@ struct plane {
 
 struct material {
 	float reflection[3];
-	float emission[4];
+	float emission[2];
 };
 
 void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<material>& materials) {
@@ -56,9 +56,9 @@ void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	planes.push_back(plane1);
 
 	// Materials
-	material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-	material material2 = { { 470.0f, 6.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-	material material3 = { { 550.0f, 0.0f, 0 }, { 550.0f, 11.0f, 0, 0.38f } };
+	material material1 = { { 550.0f, 100.0f, 0 }, { 6000.0f, 0.0f } };
+	material material2 = { { 470.0f, 6.0f, 0 }, { 6000.0f, 0.0f } };
+	material material3 = { { 550.0f, 0.0f, 0 }, { 6000.0f, 0.38f } };
 	materials.push_back(material1);
 	materials.push_back(material2);
 	materials.push_back(material3);
@@ -76,8 +76,8 @@ void world2(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	spheres.push_back(sphere2);
 
 	// Materials
-	material material1 = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
-	material material2 = { { 550.0f, 0.0f, 0 }, { 550.0f, 100.0f, 0, 0.2f } };
+	material material1 = { { 550.0f, 100.0f, 0 }, { 6000.0f, 0.0f } };
+	material material2 = { { 550.0f, 0.0f, 0 }, { 6000.0f, 0.2f } };
 	materials.push_back(material1);
 	materials.push_back(material2);
 }
@@ -345,7 +345,7 @@ int main(int argc, char* argv[])
 	std::vector <plane> planes;
 	plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
 	std::vector <material> materials;
-	material newmaterial = { { 550.0f, 100.0f, 0 }, { 550.0f, 100.0f, 0, 0.0f } };
+	material newmaterial = { { 550.0f, 100.0f, 0 }, { 6000.0f, 0.0f } };
 	world1(cameraPos, cameraAngle, spheres, planes, materials);
 
 	while (isRunning) {
@@ -440,12 +440,13 @@ int main(int argc, char* argv[])
 				ImGui::PopID();
 				ImGui::Text("Emission");
 				ImGui::PushID("Emission");
-				isReset |= ImGui::DragFloat("Peak Wavelength", &materials[materialsSelection].emission[0], 1.0f, 200.0f, 900.0f);
-				isReset |= ImGui::DragFloat("Spectrum Width", &materials[materialsSelection].emission[1], 0.5f, 0.0f, 100.0f);
-				tmpIsInvert = (bool)materials[materialsSelection].emission[2];
-				isReset |= ImGui::Checkbox("Invert", &tmpIsInvert);
-				materials[materialsSelection].emission[2] = (float)tmpIsInvert;
-				isReset |= ImGui::DragFloat("Luminosity", &materials[materialsSelection].emission[3], 0.1f);
+				//isReset |= ImGui::DragFloat("Peak Wavelength", &materials[materialsSelection].emission[0], 1.0f, 200.0f, 900.0f);
+				//isReset |= ImGui::DragFloat("Spectrum Width", &materials[materialsSelection].emission[1], 0.5f, 0.0f, 100.0f);
+				//tmpIsInvert = (bool)materials[materialsSelection].emission[2];
+				//isReset |= ImGui::Checkbox("Invert", &tmpIsInvert);
+				//materials[materialsSelection].emission[2] = (float)tmpIsInvert;
+				isReset |= ImGui::DragFloat("Temperature", &materials[materialsSelection].emission[0], 5.0f);
+				isReset |= ImGui::DragFloat("Luminosity", &materials[materialsSelection].emission[1], 0.1f);
 				ImGui::PopID();
 				ImGui::Separator();
 
@@ -524,8 +525,6 @@ int main(int argc, char* argv[])
 				materialsArray.push_back(materials[i].reflection[2]);
 				materialsArray.push_back(materials[i].emission[0]);
 				materialsArray.push_back(materials[i].emission[1]);
-				materialsArray.push_back(materials[i].emission[2]);
-				materialsArray.push_back(materials[i].emission[3]);
 			}
 			glUniform1fv(glGetUniformLocation(shaderProgram, "materials"), (GLsizei)materialsArray.size(), materialsArray.data());
 		}

@@ -33,7 +33,7 @@ struct plane {
 
 struct material {
 	vec3 reflection;
-	vec4 emission;
+	vec2 emission;
 };
 
 const float maxdist = 1e5;
@@ -73,13 +73,11 @@ mat3 RotateCamera(vec2 theta) {
 material GetMaterial(int index) {
 	// Extract Material Data From The Materials List
 	material material;
-	material.reflection.x = materials[7*index];
-	material.reflection.y = materials[7*index+1];
-	material.reflection.z = materials[7*index+2];
-	material.emission.x = materials[7*index+3];
-	material.emission.y = materials[7*index+4];
-	material.emission.z = materials[7*index+5];
-	material.emission.w = materials[7*index+6];
+	material.reflection.x = materials[5*index];
+	material.reflection.y = materials[5*index+1];
+	material.reflection.z = materials[5*index+2];
+	material.emission.x = materials[5*index+3];
+	material.emission.y = materials[5*index+4];
 	return material;
 }
 
@@ -289,6 +287,17 @@ vec3 RandomCosineDirectionHemisphere(inout uint seed, vec3 normal){
 	return normalize(sumvector);
 }
 
+float PeakEmissionWavelength(float T) {
+	// Wien's Displacement Law
+	float b = 2.897771955e-3;
+	return b / T;
+}
+
+float BlackBodyRadiation(float l, float T) {
+	// Plank's Law
+	return (1.1910429724e-16 * pow(l, -5.0)) / (exp(0.014387768775 / (l * T)) - 1.0);
+}
+
 float SpectralPowerDistribution(float l, float l_peak, float d, int invert) {
 	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
 	// Using Gaussian Function To Predict Spectral Radiance
@@ -299,17 +308,19 @@ float SpectralPowerDistribution(float l, float l_peak, float d, int invert) {
 	return radiance;
 }
 
+float Emit(float l, material mat) {
+	// Calculates Light Emittance Based On Given Material
+	//float lightEmission = SpectralPowerDistribution(l, mat.emission.x, mat.emission.y, int(mat.emission.z)) * max(mat.emission.w, 0.0);
+	float temperature = mat.emission.x;
+	float lightEmission = (BlackBodyRadiation(l * 1e-9, temperature) / BlackBodyRadiation(PeakEmissionWavelength(temperature), temperature)) * max(mat.emission.y, 0.0);
+	return lightEmission;
+}
+
 float RefractiveIndexWavelength(float l, float n, float l_n, float s){
 	// My Own Function For Refractive Index
 	// Function Is Based On Observation How Graph Of Mathematrical Functions Look Like
 	// Made To Produce Change In Refractive Index Based On Wavelength
 	return fma(s, (l_n / l) - 1.0, n);
-}
-
-float Emit(float l, material mat) {
-	// Calculates Light Emittance Based On Given Material
-	float lightEmission = SpectralPowerDistribution(l, mat.emission.x, mat.emission.y, int(mat.emission.z)) * max(mat.emission.w, 0.0);
-	return lightEmission;
 }
 
 float TraceRay(in float l, inout float rayradiance, inout vec3 origin, inout vec3 dir, inout uint seed, out bool isTerminate) {
@@ -321,7 +332,7 @@ float TraceRay(in float l, inout float rayradiance, inout vec3 origin, inout vec
 	if (hitdist < maxdist) {
 		origin = fma(dir, vec3(hitdist), origin);
 		dir = RandomCosineDirectionHemisphere(seed, normal);
-		if (mat.emission.w > 0.0) {
+		if (mat.emission.y > 0.0) {
 			radiance = fma(Emit(l, mat), rayradiance, radiance);
 			isTerminate = true;
 		}
