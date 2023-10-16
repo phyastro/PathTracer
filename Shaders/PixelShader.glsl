@@ -287,10 +287,14 @@ vec3 RandomCosineDirectionHemisphere(inout uint seed, vec3 normal){
 	return normalize(sumvector);
 }
 
-float PeakEmissionWavelength(float T) {
-	// Wien's Displacement Law
-	float b = 2.897771955e-3;
-	return b / T;
+float SpectralPowerDistribution(float l, float l_peak, float d, int invert) {
+	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
+	// Using Gaussian Function To Predict Spectral Radiance
+	// In Reality, Spectral Radiance Function Has Different Shapes For Different Objects Also Looks Much Different Than This
+	float x = (l - l_peak) / (2.0 * d * d);
+	float radiance = exp(-x * x);
+	radiance = mix(radiance, 1.0 - radiance, invert);
+	return radiance;
 }
 
 float BlackBodyRadiation(float l, float T) {
@@ -298,21 +302,16 @@ float BlackBodyRadiation(float l, float T) {
 	return (1.1910429724e-16 * pow(l, -5.0)) / (exp(0.014387768775 / (l * T)) - 1.0);
 }
 
-float SpectralPowerDistribution(float l, float l_peak, float d, int invert) {
-	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
-	// Using Gaussian Function To Predict Spectral Radiance
-	// In Reality, Spectral Radiance Function Has Different Shapes For Different Objects Also Looks Much Different Than This
-	float x = (l - l_peak) / (2 * d * d);
-	float radiance = exp(-x * x);
-	radiance = mix(radiance, 1.0 - radiance, invert);
-	return radiance;
+float BlackBodyRadiationPeak(in float T) {
+	// Derived By Substituting Wien's Displacement Law On Plank's Law
+	return 4.0956746759e-6 * pow(T, 5.0);
 }
 
 float Emit(float l, material mat) {
 	// Calculates Light Emittance Based On Given Material
 	//float lightEmission = SpectralPowerDistribution(l, mat.emission.x, mat.emission.y, int(mat.emission.z)) * max(mat.emission.w, 0.0);
-	float temperature = mat.emission.x;
-	float lightEmission = (BlackBodyRadiation(l * 1e-9, temperature) / BlackBodyRadiation(PeakEmissionWavelength(temperature), temperature)) * max(mat.emission.y, 0.0);
+	float temperature = max(mat.emission.x, 0.0);
+	float lightEmission = (BlackBodyRadiation(l * 1e-9, temperature) / BlackBodyRadiationPeak(temperature)) * max(mat.emission.y, 0.0);
 	return lightEmission;
 }
 
