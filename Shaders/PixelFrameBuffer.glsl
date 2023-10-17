@@ -27,7 +27,7 @@ vec3 BioPhotometricTonemapping(vec3 x) {
 
 void main() {
 	vec3 color = vec3(0.0);
-	color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz / samples;
+	color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz / ((samples > 0) ? samples : 1);
 	color = Gamma(BioPhotometricTonemapping(max(XYZToRGB(color), 0.0)), 2.2);
 	FragColor = vec4(color, 1.0);
 }

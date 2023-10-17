@@ -56,9 +56,9 @@ void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	planes.push_back(plane1);
 
 	// Materials
-	material material1 = { { 550.0f, 100.0f, 0 }, { 6000.0f, 0.0f } };
-	material material2 = { { 470.0f, 6.0f, 0 }, { 6000.0f, 0.0f } };
-	material material3 = { { 550.0f, 0.0f, 0 }, { 6000.0f, 0.38f } };
+	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
+	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 0.38f } };
 	materials.push_back(material1);
 	materials.push_back(material2);
 	materials.push_back(material3);
@@ -76,8 +76,8 @@ void world2(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	spheres.push_back(sphere2);
 
 	// Materials
-	material material1 = { { 550.0f, 100.0f, 0 }, { 6000.0f, 0.0f } };
-	material material2 = { { 550.0f, 0.0f, 0 }, { 6000.0f, 0.2f } };
+	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+	material material2 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 0.2f } };
 	materials.push_back(material1);
 	materials.push_back(material2);
 }
@@ -381,7 +381,7 @@ int main(int argc, char* argv[])
 			isReset |= ImGui::DragFloat("Camera FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");
 			isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
 			isReset |= ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
-			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
+			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 0, 100);
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
 			ImGui::Separator();
 

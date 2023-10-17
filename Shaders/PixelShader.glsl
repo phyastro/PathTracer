@@ -148,31 +148,64 @@ float BoxIntersection(vec3 origin, vec3 dir, vec3 pos, vec3 size, out vec3 norma
 }
 
 float CarvedSphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3 normal) {
-	vec3 localorigin = origin - pos - vec3(radius, 0.0, 0.0);
-	float a = dot(dir, dir);
-	float b = 2.0 * dot(dir, localorigin);
-	float c = dot(localorigin, localorigin) - (radius * radius);
-	float discriminant = b * b - 4.0 * a * c;
-	float t = 1e6;
-	int isOutside = 1;
-	if (discriminant >= 0.0) {
-		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-		float condition = 0.2 - radius;
-		t1 = (fma(dir.x, t1, localorigin.x) > condition) ? 1e6 : t1;
-		t2 = (fma(dir.x, t2, localorigin.x) > condition) ? 1e6 : t2;
-		t = (t1 > 0.0) ? t1 : t;
-		if (t2 < t) {
-			t = t2;
-			isOutside = -1;
+	float hitdist = 1e6;
+	{
+		vec3 localorigin = origin - pos - vec3(radius, 0.0, 0.0);
+		float a = dot(dir, dir);
+		float b = 2.0 * dot(dir, localorigin);
+		float c = dot(localorigin, localorigin) - (radius * radius);
+		float discriminant = b * b - 4.0 * a * c;
+		float t = 1e6;
+		int isOutside = 1;
+		if (discriminant >= 0.0) {
+			float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+			float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+			float condition = 0.2 - radius;
+			t1 = (fma(dir.x, t1, localorigin.x) > condition) ? 1e6 : t1;
+			t2 = (fma(dir.x, t2, localorigin.x) > condition) ? 1e6 : t2;
+			t = (t1 > 0.0) ? t1 : t;
+			if (t2 < t) {
+				t = t2;
+				isOutside = -1;
+			}
+		}
+		if (t < 1e-4) {
+			t = 1e6;
+			isOutside = 1;
+		}
+		hitdist = t;
+		normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
+	}
+	{
+		vec3 localorigin = origin - pos + vec3(radius - 0.4, 0.0, 0.0);
+		float a = dot(dir, dir);
+		float b = 2.0 * dot(dir, localorigin);
+		float c = dot(localorigin, localorigin) - (radius * radius);
+		float discriminant = b * b - 4.0 * a * c;
+		float t = 1e6;
+		int isOutside = 1;
+		if (discriminant >= 0.0) {
+			float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+			float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+			float condition = radius - 0.2;
+			t1 = (fma(dir.x, t1, localorigin.x) < condition) ? 1e6 : t1;
+			t2 = (fma(dir.x, t2, localorigin.x) < condition) ? 1e6 : t2;
+			t = (t1 > 0.0) ? t1 : t;
+			if (t2 < t) {
+				t = t2;
+				isOutside = -1;
+			}
+		}
+		if (t < 1e-4) {
+			t = 1e6;
+			isOutside = 1;
+		}
+		if (t < hitdist) {
+			hitdist = t;
+			normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
 		}
 	}
-	if (t < 1e-4) {
-		t = 1e6;
-		isOutside = 1;
-	}
-	normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
-	return t;
+	return hitdist;
 }
 
 void LensIntersection(inout float hitdist, vec3 origin, vec3 dir, vec3 pos, float radius, inout vec3 normal, inout material mat) {
@@ -309,7 +342,6 @@ float BlackBodyRadiationPeak(in float T) {
 
 float Emit(float l, material mat) {
 	// Calculates Light Emittance Based On Given Material
-	//float lightEmission = SpectralPowerDistribution(l, mat.emission.x, mat.emission.y, int(mat.emission.z)) * max(mat.emission.w, 0.0);
 	float temperature = max(mat.emission.x, 0.0);
 	float lightEmission = (BlackBodyRadiation(l * 1e-9, temperature) / BlackBodyRadiationPeak(temperature)) * max(mat.emission.y, 0.0);
 	return lightEmission;
@@ -398,11 +430,13 @@ void Accumulate(inout vec3 color) {
 	// Then We Get, x^numFrames = 2^(-8) Where x Is Multiply Constant
 	// Also We Know That, numFrames = FPS * time(The Amount Of Time Will Be Needed To Reach 1/256)
 	// Therefore, x = 2^(-8 / (FPS*time))
-	float weight = pow(2.0, -8.0 / (FPS * persistance));
-	if ((samples == samplesPerFrame) && (frame > samplesPerFrame)) {
-		color = ((1.0 - weight) * color) + (weight * texture(screenTexture, gl_FragCoord.xy / resolution).xyz * samplesPerFrame / prevSamples);
-	} else {
-		color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz + color;
+	if (prevSamples > 0) {
+		if ((samples == samplesPerFrame) && (frame > samplesPerFrame)) {
+			float weight = pow(2.0, -8.0 / (FPS * persistance));
+			color = ((1.0 - weight) * color) + (weight * texture(screenTexture, gl_FragCoord.xy / resolution).xyz * samplesPerFrame / prevSamples);
+		} else {
+			color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz + color;
+		}
 	}
 }
 
