@@ -20,6 +20,11 @@ uniform float objects[512];
 uniform float materials[512];
 uniform sampler2D screenTexture;
 
+struct Ray {
+	vec3 origin;
+	vec3 dir;
+};
+
 struct sphere {
 	vec3 pos;
 	float radius;
@@ -39,7 +44,7 @@ struct material {
 const float maxdist = 1e5;
 const float pi = 3.141592653589792623810034526344;
 
-vec3 WaveToXYZ(float wave) {
+vec3 WaveToXYZ(in float wave) {
 	// Conversion From Wavelength To XYZ Using CIE1964 XYZ Table
 	vec3 XYZ = vec3(0.0, 0.0, 0.0);
 	if ((wave >= 390) && (wave <= 830)){
@@ -53,24 +58,24 @@ vec3 WaveToXYZ(float wave) {
 	return XYZ;
 }
 
-float SampleSpectra(float start, float end, float rand){
+float SampleSpectra(in float start, in float end, in float rand){
 	// Uniform Inverted CDF For Sampling
 	return (end - start) * rand + start;
 }
 
-float SpectraPDF(float start, float end){
+float SpectraPDF(in float start, in float end){
 	// Uniform PDF
 	return 1.0 / (end - start);
 }
 
-mat3 RotateCamera(vec2 theta) {
+mat3 RotateCamera(in vec2 theta) {
 	// http://www.songho.ca/opengl/gl_anglestoaxes.html
 	mat3 mX = mat3(1.0, 0.0, 0.0, 0.0, cos(theta.x), -sin(theta.x), 0.0, sin(theta.x), cos(theta.x));
 	mat3 mY = mat3(cos(theta.y), 0.0, sin(theta.y), 0.0, 1.0, 0.0, -sin(theta.y), 0.0, cos(theta.y));
 	return mX * mY;
 }
 
-material GetMaterial(int index) {
+material GetMaterial(in int index) {
 	// Extract Material Data From The Materials List
 	material material;
 	material.reflection.x = materials[5*index];
@@ -81,10 +86,10 @@ material GetMaterial(int index) {
 	return material;
 }
 
-float SphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3 normal) {
-	vec3 localorigin = origin - pos;
-	float a = dot(dir, dir);
-	float b = 2.0 * dot(dir, localorigin);
+float SphereIntersection(in Ray ray, in vec3 pos, in float radius, out vec3 normal) {
+	vec3 localorigin = ray.origin - pos;
+	float a = dot(ray.dir, ray.dir);
+	float b = 2.0 * dot(ray.dir, localorigin);
 	float c = dot(localorigin, localorigin) - (radius * radius);
 	float discriminant = b * b - 4.0 * a * c;
 	float t = 1e6;
@@ -99,24 +104,24 @@ float SphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3
 		t = 1e6;
 		isOutside = 1;
 	}
-	normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
+	normal = normalize(fma(ray.dir, vec3(t), localorigin) * radius * isOutside);
 	return t;
 }
 
-float PlaneIntersection(vec3 origin, vec3 dir, vec3 pos, out vec3 normal) {
-	vec3 localorigin = origin - pos;
-	float t = -localorigin.y / dir.y;
+float PlaneIntersection(in Ray ray, in vec3 pos, out vec3 normal) {
+	vec3 localorigin = ray.origin - pos;
+	float t = -localorigin.y / ray.dir.y;
 	t = (t < 1e-4) ? 1e6 : t;
 	normal = vec3(0.0, 1.0, 0.0);
-	normal = faceforward(normal, dir, normal);
+	normal = faceforward(normal, ray.dir, normal);
 	return t;
 }
 
 // Box Intersection By iq
 // https://www.shadertoy.com/view/ld23DV
-float BoxIntersection(vec3 origin, vec3 dir, vec3 pos, vec3 size, out vec3 normal) {
-	vec3 localorigin = origin - pos;
-	vec3 m = 1.0 / dir;
+float BoxIntersection(in Ray ray, in vec3 pos, in vec3 size, out vec3 normal) {
+	vec3 localorigin = ray.origin - pos;
+	vec3 m = 1.0 / ray.dir;
 	vec3 n = m * localorigin;
 	vec3 k = abs(m) * size / 2.0;
 	vec3 k1 = -n - k;
@@ -142,83 +147,63 @@ float BoxIntersection(vec3 origin, vec3 dir, vec3 pos, vec3 size, out vec3 norma
 	} else {
 		normal = step(k2, vec3(tF));
 	}
-	normal *= -sign(dir);
+	normal *= -sign(ray.dir);
 	normal = normalize(normal);
 	return t;
 }
 
-float CarvedSphereIntersection(vec3 origin, vec3 dir, vec3 pos, float radius, out vec3 normal) {
-	float hitdist = 1e6;
-	{
-		vec3 localorigin = origin - pos - vec3(radius, 0.0, 0.0);
-		float a = dot(dir, dir);
-		float b = 2.0 * dot(dir, localorigin);
-		float c = dot(localorigin, localorigin) - (radius * radius);
-		float discriminant = b * b - 4.0 * a * c;
-		float t = 1e6;
-		int isOutside = 1;
-		if (discriminant >= 0.0) {
-			float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-			float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-			float condition = 0.2 - radius;
-			t1 = (fma(dir.x, t1, localorigin.x) > condition) ? 1e6 : t1;
-			t2 = (fma(dir.x, t2, localorigin.x) > condition) ? 1e6 : t2;
-			t = (t1 > 0.0) ? t1 : t;
-			if (t2 < t) {
-				t = t2;
-				isOutside = -1;
-			}
-		}
-		if (t < 1e-4) {
-			t = 1e6;
-			isOutside = 1;
-		}
-		hitdist = t;
-		normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
+float CarvedSphereIntersection(in Ray ray, in vec3 pos, in float radius, in bool isSlice1st, out vec3 normal) {
+	float carveOffset = radius - 0.2;
+	vec3 localorigin = ray.origin - pos;
+	if (isSlice1st) {
+		localorigin.x -= carveOffset + 0.2;
+	} else {
+		localorigin.x += carveOffset + 0.2;
 	}
-	{
-		vec3 localorigin = origin - pos + vec3(radius - 0.4, 0.0, 0.0);
-		float a = dot(dir, dir);
-		float b = 2.0 * dot(dir, localorigin);
-		float c = dot(localorigin, localorigin) - (radius * radius);
-		float discriminant = b * b - 4.0 * a * c;
-		float t = 1e6;
-		int isOutside = 1;
-		if (discriminant >= 0.0) {
-			float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-			float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-			float condition = radius - 0.2;
-			t1 = (fma(dir.x, t1, localorigin.x) < condition) ? 1e6 : t1;
-			t2 = (fma(dir.x, t2, localorigin.x) < condition) ? 1e6 : t2;
-			t = (t1 > 0.0) ? t1 : t;
-			if (t2 < t) {
-				t = t2;
-				isOutside = -1;
-			}
+	float a = dot(ray.dir, ray.dir);
+	float b = 2.0 * dot(ray.dir, localorigin);
+	float c = dot(localorigin, localorigin) - (radius * radius);
+	float discriminant = b * b - 4.0 * a * c;
+	float t = 1e6;
+	int isOutside = 1;
+	if (discriminant >= 0.0) {
+		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+		if (isSlice1st) {
+			t1 = (fma(ray.dir.x, t1, localorigin.x) > -carveOffset) ? 1e6 : t1;
+			t2 = (fma(ray.dir.x, t2, localorigin.x) > -carveOffset) ? 1e6 : t2;
+		} else {
+			t1 = (fma(ray.dir.x, t1, localorigin.x) < carveOffset) ? 1e6 : t1;
+			t2 = (fma(ray.dir.x, t2, localorigin.x) < carveOffset) ? 1e6 : t2;
 		}
-		if (t < 1e-4) {
-			t = 1e6;
-			isOutside = 1;
+		t = (t1 > 0.0) ? t1 : t;
+		if (t2 < t) {
+			t = t2;
+			isOutside = -1;
 		}
+	}
+	if (t < 1e-4) {
+		t = 1e6;
+		isOutside = 1;
+	}
+	normal = normalize(fma(ray.dir, vec3(t), localorigin) * radius * isOutside);
+	return t;
+}
+
+void LensIntersection(inout float hitdist, in Ray ray, in vec3 pos, in float radius, inout vec3 normal, inout material mat) {
+	bool lensArray[2] = {true, false};
+	for (int i = 0; i < 2; i++) {
+		vec3 norm = vec3(0.0);
+		float t = CarvedSphereIntersection(ray, pos, radius, lensArray[i], norm);
 		if (t < hitdist) {
 			hitdist = t;
-			normal = normalize(fma(dir, vec3(t), localorigin) * radius * isOutside);
+			normal = norm;
+			mat = GetMaterial(0);
 		}
 	}
-	return hitdist;
 }
 
-void LensIntersection(inout float hitdist, vec3 origin, vec3 dir, vec3 pos, float radius, inout vec3 normal, inout material mat) {
-	vec3 norm = vec3(0.0);
-	float t = CarvedSphereIntersection(origin, dir, pos, radius, norm);
-	if (t < hitdist) {
-		hitdist = t;
-		normal = norm;
-		mat = GetMaterial(0);
-	}
-}
-
-float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
+float Intersection(in Ray ray, out vec3 normal, out material mat) {
 	float hitdist = 1e6;
 	
 	for (int i = 0; i < numObjects[0]; i++) {
@@ -228,7 +213,7 @@ float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 		object.radius = objects[5*i+3+offset];
 		object.materialID = int(objects[5*i+4+offset])-1;
 		vec3 norm = vec3(0.0);
-		float intersect = SphereIntersection(origin, dir, object.pos, object.radius, norm);
+		float intersect = SphereIntersection(ray, object.pos, object.radius, norm);
 		if (intersect < hitdist) {
 			hitdist = intersect;
 			normal = norm;
@@ -242,7 +227,7 @@ float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 		object.pos = vec3(objects[4*i+offset], objects[4*i+1+offset], objects[4*i+2+offset]);
 		object.materialID = int(objects[4*i+3+offset])-1;
 		vec3 norm = vec3(0.0);
-		float intersect = PlaneIntersection(origin, dir, object.pos, norm);
+		float intersect = PlaneIntersection(ray, object.pos, norm);
 		if (intersect < hitdist) {
 			hitdist = intersect;
 			normal = norm;
@@ -253,7 +238,7 @@ float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 	for (int i = 0; i < 1; i++) {
 		int offset = 0;
 		vec3 norm = vec3(0.0);
-		float intersect = BoxIntersection(origin, dir, vec3(3.0, 0.75, 1.0), vec3(1.5, 1.5, 1.5), norm);
+		float intersect = BoxIntersection(ray, vec3(3.0, 0.75, 1.0), vec3(1.5, 1.5, 1.5), norm);
 		if (intersect < hitdist) {
 			hitdist = intersect;
 			normal = norm;
@@ -261,7 +246,7 @@ float Intersection(vec3 origin, vec3 dir, out vec3 normal, out material mat) {
 		}
 	}
 	
-	LensIntersection(hitdist, origin, dir, vec3(5.0, 1.0, -4.0), 2.6, normal, mat);
+	LensIntersection(hitdist, ray, vec3(5.0, 1.0, -4.0), 2.6, normal, mat);
 
 	return hitdist;
 }
@@ -287,7 +272,7 @@ float RandomFloat(inout uint seed) {
 	return float(seed) / 0xFFFFFFFFu;
 }
 
-uint GenerateSeed(uint x, uint y, uint k) {
+uint GenerateSeed(in uint x, in uint y, in uint k) {
 	// Actually This Is Not The Correct Way To Generate Seed
 	// This Is The Correct Implementation Which Has No Overlapping:
 	/* uint seed = (resolution.x * resolution.y) * (frame - 1) + k;
@@ -314,13 +299,13 @@ vec3 UniformRandomPointsUnitSphere(inout uint seed){
 	return vec3(x, y, z);
 }
 
-vec3 RandomCosineDirectionHemisphere(inout uint seed, vec3 normal){
+vec3 RandomCosineDirectionHemisphere(inout uint seed, in vec3 normal){
 	// Generate Cosine Distributed Random Vectors Within Normals Hemisphere
 	vec3 sumvector = normal + UniformRandomPointsUnitSphere(seed);
 	return normalize(sumvector);
 }
 
-float SpectralPowerDistribution(float l, float l_peak, float d, int invert) {
+float SpectralPowerDistribution(in float l, in float l_peak, in float d, in int invert) {
 	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
 	// Using Gaussian Function To Predict Spectral Radiance
 	// In Reality, Spectral Radiance Function Has Different Shapes For Different Objects Also Looks Much Different Than This
@@ -330,7 +315,7 @@ float SpectralPowerDistribution(float l, float l_peak, float d, int invert) {
 	return radiance;
 }
 
-float BlackBodyRadiation(float l, float T) {
+float BlackBodyRadiation(in float l, in float T) {
 	// Plank's Law
 	return (1.1910429724e-16 * pow(l, -5.0)) / (exp(0.014387768775 / (l * T)) - 1.0);
 }
@@ -340,29 +325,29 @@ float BlackBodyRadiationPeak(in float T) {
 	return 4.0956746759e-6 * pow(T, 5.0);
 }
 
-float Emit(float l, material mat) {
+float Emit(in float l, in material mat) {
 	// Calculates Light Emittance Based On Given Material
 	float temperature = max(mat.emission.x, 0.0);
 	float lightEmission = (BlackBodyRadiation(l * 1e-9, temperature) / BlackBodyRadiationPeak(temperature)) * max(mat.emission.y, 0.0);
 	return lightEmission;
 }
 
-float RefractiveIndexWavelength(float l, float n, float l_n, float s){
+float RefractiveIndexWavelength(in float l, in float n, in float l_n, in float s){
 	// My Own Function For Refractive Index
 	// Function Is Based On Observation How Graph Of Mathematrical Functions Look Like
 	// Made To Produce Change In Refractive Index Based On Wavelength
 	return fma(s, (l_n / l) - 1.0, n);
 }
 
-float TraceRay(in float l, inout float rayradiance, inout vec3 origin, inout vec3 dir, inout uint seed, out bool isTerminate) {
+float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint seed, out bool isTerminate) {
 	// Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
 	float radiance = 0.0;
 	vec3 normal = vec3(0.0);
 	material mat;
-	float hitdist = Intersection(origin, dir, normal, mat);
+	float hitdist = Intersection(ray, normal, mat);
 	if (hitdist < maxdist) {
-		origin = fma(dir, vec3(hitdist), origin);
-		dir = RandomCosineDirectionHemisphere(seed, normal);
+		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
+		ray.dir = RandomCosineDirectionHemisphere(seed, normal);
 		if (mat.emission.y > 0.0) {
 			radiance = fma(Emit(l, mat), rayradiance, radiance);
 			isTerminate = true;
@@ -376,14 +361,14 @@ float TraceRay(in float l, inout float rayradiance, inout vec3 origin, inout vec
 	return radiance;
 }
 
-float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
+float TracePath(in float l, in Ray ray, inout uint seed) {
 	// Traces A Path Starting From The Given Origin And Direction
 	// And Calculates Light Radiance
 	float radiance = 0.0;
 	float rayradiance = 1.0;
 	bool isTerminate = false;
 	for (int i = 0; i < pathLength; i++) {
-		radiance += TraceRay(l, rayradiance, origin, dir, seed, isTerminate);
+		radiance += TraceRay(l, rayradiance, ray, seed, isTerminate);
 		if (isTerminate){
 			break;
 		}
@@ -391,7 +376,7 @@ float TracePath(in float l, in vec3 origin, in vec3 dir, inout uint seed) {
 	return radiance;
 }
 
-vec3 Scene(uint x, uint y, uint k) {
+vec3 Scene(in uint x, in uint y, in uint k) {
 	uint seed = GenerateSeed(x, y, k);
 	float tan_fov = tan(radians(FOV / 2.0));
 	vec2 uv = ((2.0 * vec2(x, y) - resolution) / resolution.y) * tan_fov;
@@ -400,18 +385,19 @@ vec3 Scene(uint x, uint y, uint k) {
 	// Fix Camera Angle For The Rotation Function
 	vec2 theta = vec2(-cameraAngle.y, cameraAngle.x);
 
-	vec3 origin = cameraPos;
+	Ray ray;
+	ray.origin = cameraPos;
 	mat3 m1 = RotateCamera(theta); // Can Be Optimized By Computing This Outside The Fragment Shader
 	vec3 m2 = vec3(uv, 1.0);
-	vec3 dir = normalize(vec3(m2 * m1));
+	ray.dir = normalize(vec3(m2 * m1));
 	vec3 forward = normalize(vec3(vec3(0.0, 0.0, 1.0) * m1));
 
 	vec3 color = vec3(0.0);
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
 	// Chromatic Aberration
-	dir = refract(dir, -forward, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.025));
-	color += (TracePath(l, origin, dir, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
+	ray.dir = refract(ray.dir, -forward, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.025));
+	color += (TracePath(l, ray, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
 	color *= exposure;
 	//vec3 normal = vec3(0.0);
 	//material mat;
