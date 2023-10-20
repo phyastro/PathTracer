@@ -68,11 +68,24 @@ float SpectraPDF(in float start, in float end){
 	return 1.0 / (end - start);
 }
 
+// http://www.songho.ca/opengl/gl_anglestoaxes.html
 mat3 RotateCamera(in vec2 theta) {
-	// http://www.songho.ca/opengl/gl_anglestoaxes.html
-	mat3 mX = mat3(1.0, 0.0, 0.0, 0.0, cos(theta.x), -sin(theta.x), 0.0, sin(theta.x), cos(theta.x));
-	mat3 mY = mat3(cos(theta.y), 0.0, sin(theta.y), 0.0, 1.0, 0.0, -sin(theta.y), 0.0, cos(theta.y));
+	vec2 sinxy = sin(theta);
+	vec2 cosxy = cos(theta);
+	mat3 mX = mat3(1.0, 0.0, 0.0, 0.0, cosxy.x, -sinxy.x, 0.0, sinxy.x, cosxy.x);
+	mat3 mY = mat3(cosxy.y, 0.0, sinxy.y, 0.0, 1.0, 0.0, -sinxy.y, 0.0, cosxy.y);
 	return mX * mY;
+}
+
+// http://www.songho.ca/opengl/gl_anglestoaxes.html
+vec3 RotateVector(in vec3 vector, in vec3 angle) {
+	vec3 sinxyz = sin(angle);
+	vec3 cosxyz = cos(angle);
+	mat3 mX = mat3(1.0, 0.0, 0.0, 0.0, cosxyz.x, -sinxyz.x, 0.0, sinxyz.x, cosxyz.x);
+	mat3 mY = mat3(cosxyz.y, 0.0, sinxyz.y, 0.0, 1.0, 0.0, -sinxyz.y, 0.0, cosxyz.y);
+	mat3 mZ = mat3(cosxyz.z, -sinxyz.z, 0.0, sinxyz.z, cosxyz.z, 0.0, 0.0, 0.0, 1.0);
+	mat3 m = mX * mY * mZ;
+	return vector * m;
 }
 
 material GetMaterial(in int index) {
@@ -120,7 +133,8 @@ float PlaneIntersection(in Ray ray, in vec3 pos, out vec3 normal) {
 // Box Intersection By iq
 // https://www.shadertoy.com/view/ld23DV
 float BoxIntersection(in Ray ray, in vec3 pos, in vec3 size, out vec3 normal) {
-	vec3 localorigin = ray.origin - pos;
+	vec3 localorigin = RotateVector(ray.origin - pos, vec3(0.0, 58.31 * pi / 180.0, 0.0));
+	ray.dir = RotateVector(ray.dir, vec3(0.0, 58.31 * pi / 180.0, 0.0));
 	vec3 m = 1.0 / ray.dir;
 	vec3 n = m * localorigin;
 	vec3 k = abs(m) * size / 2.0;
@@ -148,17 +162,17 @@ float BoxIntersection(in Ray ray, in vec3 pos, in vec3 size, out vec3 normal) {
 		normal = step(k2, vec3(tF));
 	}
 	normal *= -sign(ray.dir);
-	normal = normalize(normal);
+	normal = RotateVector(normalize(normal), -vec3(0.0, 58.31 * pi / 180.0, 0.0));
 	return t;
 }
 
-float CarvedSphereIntersection(in Ray ray, in vec3 pos, in float radius, in bool isSlice1st, out vec3 normal) {
-	float carveOffset = radius - 0.2;
+float SphereSliceIntersection(in Ray ray, in vec3 pos, in float radius, in float sliceSize, in bool is1stSlice, out vec3 normal) {
+	float carveOffset = radius - sliceSize;
 	vec3 localorigin = ray.origin - pos;
-	if (isSlice1st) {
-		localorigin.x -= carveOffset + 0.2;
+	if (is1stSlice) {
+		localorigin.x -= carveOffset + sliceSize;
 	} else {
-		localorigin.x += carveOffset + 0.2;
+		localorigin.x += carveOffset + sliceSize;
 	}
 	float a = dot(ray.dir, ray.dir);
 	float b = 2.0 * dot(ray.dir, localorigin);
@@ -169,7 +183,7 @@ float CarvedSphereIntersection(in Ray ray, in vec3 pos, in float radius, in bool
 	if (discriminant >= 0.0) {
 		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
 		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-		if (isSlice1st) {
+		if (is1stSlice) {
 			t1 = (fma(ray.dir.x, t1, localorigin.x) > -carveOffset) ? 1e6 : t1;
 			t2 = (fma(ray.dir.x, t2, localorigin.x) > -carveOffset) ? 1e6 : t2;
 		} else {
@@ -190,11 +204,16 @@ float CarvedSphereIntersection(in Ray ray, in vec3 pos, in float radius, in bool
 	return t;
 }
 
-void LensIntersection(inout float hitdist, in Ray ray, in vec3 pos, in float radius, inout vec3 normal, inout material mat) {
-	bool lensArray[2] = {true, false};
+float lensRadius = 1.0;
+float lensFocalLength = 1.0;
+float lensThickness = 4.0 * lensFocalLength - 2.0 * sqrt(4.0 * lensFocalLength * lensFocalLength - lensRadius * lensRadius);
+
+void LensIntersection(inout float hitdist, in Ray ray, in vec3 pos, inout vec3 normal, inout material mat) {
+	bool lensSlicePart[2] = {true, false};
+	float lensSlicePos[2] = {lensThickness / 2.0, -lensThickness / 2.0};
 	for (int i = 0; i < 2; i++) {
 		vec3 norm = vec3(0.0);
-		float t = CarvedSphereIntersection(ray, pos, radius, lensArray[i], norm);
+		float t = SphereSliceIntersection(ray, pos - vec3(lensSlicePos[i], 0.0, 0.0), 2.0 * lensFocalLength, lensThickness / 2.0, lensSlicePart[i], norm);
 		if (t < hitdist) {
 			hitdist = t;
 			normal = norm;
@@ -246,7 +265,7 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 		}
 	}
 	
-	LensIntersection(hitdist, ray, vec3(5.0, 1.0, -4.0), 2.6, normal, mat);
+	LensIntersection(hitdist, ray, vec3(5.0, 1.0, -4.0), normal, mat);
 
 	return hitdist;
 }
@@ -396,6 +415,10 @@ vec3 Scene(in uint x, in uint y, in uint k) {
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
 	// Chromatic Aberration
+	//float hitdist = 1e6;
+	//vec3 normal = vec3(0.0);
+	//material mat;
+	//LensIntersection(hitdist, ray, forward * 2.0, normal, mat);
 	ray.dir = refract(ray.dir, -forward, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.025));
 	color += (TracePath(l, ray, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
 	color *= exposure;
