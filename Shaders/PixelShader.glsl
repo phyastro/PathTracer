@@ -20,6 +20,11 @@ uniform float objects[512];
 uniform float materials[512];
 uniform sampler2D screenTexture;
 
+#define MAXDIST 1e5
+#define PI 3.141592653589792623810034526344
+
+float tan_fov = tan(radians(FOV / 2.0));
+
 struct Ray {
 	vec3 origin;
 	vec3 dir;
@@ -48,9 +53,6 @@ struct material {
 	vec3 reflection;
 	vec2 emission;
 };
-
-const float maxdist = 1e5;
-const float pi = 3.141592653589792623810034526344;
 
 vec3 WaveToXYZ(in float wave) {
 	// Conversion From Wavelength To XYZ Using CIE1964 XYZ Table
@@ -87,16 +89,15 @@ mat3 RotateCamera(in vec2 theta) {
 }
 
 // http://www.songho.ca/opengl/gl_anglestoaxes.html
-vec3 RotateVector(in vec3 vector, in vec3 angle) {
-	// Rotate The Vector By Given Angle Using Rotation Matrix
+mat3 RotationMatrix(in vec3 angle) {
+	// Builds Rotation Matrix Based On Given Angle
 	angle *= 0.0174532925199;
 	vec3 sinxyz = sin(angle);
 	vec3 cosxyz = cos(angle);
 	mat3 mX = mat3(1.0, 0.0, 0.0, 0.0, cosxyz.x, -sinxyz.x, 0.0, sinxyz.x, cosxyz.x);
 	mat3 mY = mat3(cosxyz.y, 0.0, sinxyz.y, 0.0, 1.0, 0.0, -sinxyz.y, 0.0, cosxyz.y);
 	mat3 mZ = mat3(cosxyz.z, -sinxyz.z, 0.0, sinxyz.z, cosxyz.z, 0.0, 0.0, 0.0, 1.0);
-	mat3 m = mX * mY * mZ;
-	return vector * m;
+	return mX * mY * mZ;
 }
 
 material GetMaterial(in int index) {
@@ -130,7 +131,7 @@ float SphereIntersection(in Ray ray, in vec3 pos, in float radius, out vec3 norm
 		t = 1e6;
 		isOutside = 1;
 	}
-	normal = normalize(fma(ray.dir, vec3(t), localorigin) * radius * isOutside);
+	normal = normalize(fma(ray.dir, vec3(t), localorigin) * isOutside);
 	return t;
 }
 
@@ -149,8 +150,9 @@ float PlaneIntersection(in Ray ray, in vec3 pos, out vec3 normal) {
 // https://www.shadertoy.com/view/ld23DV
 float BoxIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in vec3 size, out vec3 normal) {
 	// Ray-Intersection Of Box
-	vec3 localorigin = RotateVector(ray.origin - pos, rotation);
-	ray.dir = RotateVector(ray.dir, rotation);
+	mat3 matrix = RotationMatrix(rotation);
+	vec3 localorigin = (ray.origin - pos) * matrix;
+	ray.dir = ray.dir * matrix;
 	vec3 m = 1.0 / ray.dir;
 	vec3 n = m * localorigin;
 	vec3 k = abs(m) * size / 2.0;
@@ -178,24 +180,25 @@ float BoxIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in vec3 size, o
 		normal = step(k2, vec3(tF));
 	}
 	normal *= -sign(ray.dir);
-	normal = RotateVector(normalize(normal), -rotation);
+	normal = normalize(normal) * transpose(matrix);
 	return t;
 }
 
-float SphereSliceIntersection(in Ray ray, in vec3 pos, in float radius, in float sliceSize, in bool is1stSlice, out vec3 normal) {
+float SphereSliceIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in float radius, in float sliceSize, in bool is1stSlice, out vec3 normal) {
 	// Ray-Intersection Of Sliced Sphere
 	// Slicing Based On Parameters Slice Size And Slice Side
 	// Built By Solving The Same Equation Of Sphere
+	mat3 matrix = RotationMatrix(rotation);
+	Ray localRay;
 	float sliceOffset = radius - sliceSize;
-	vec3 localorigin = ray.origin - pos;
-	if (is1stSlice) {
-		localorigin.x -= sliceOffset + sliceSize;
-	} else {
-		localorigin.x += sliceOffset + sliceSize;
-	}
-	float a = dot(ray.dir, ray.dir);
-	float b = 2.0 * dot(ray.dir, localorigin);
-	float c = dot(localorigin, localorigin) - (radius * radius);
+	localRay.origin = ray.origin - pos;
+	localRay.origin.x += is1stSlice ? -sliceSize : sliceSize;
+	localRay.origin = localRay.origin * matrix;
+	localRay.origin.x += is1stSlice ? -sliceOffset : sliceOffset;
+	localRay.dir = ray.dir * matrix;
+	float a = dot(localRay.dir, localRay.dir);
+	float b = 2.0 * dot(localRay.dir, localRay.origin);
+	float c = dot(localRay.origin, localRay.origin) - (radius * radius);
 	float discriminant = b * b - 4.0 * a * c;
 	float t = 1e6;
 	int isOutside = 1;
@@ -203,11 +206,11 @@ float SphereSliceIntersection(in Ray ray, in vec3 pos, in float radius, in float
 		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
 		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
 		if (is1stSlice) {
-			t1 = (fma(ray.dir.x, t1, localorigin.x) > -sliceOffset) ? 1e6 : t1;
-			t2 = (fma(ray.dir.x, t2, localorigin.x) > -sliceOffset) ? 1e6 : t2;
+			t1 = (fma(localRay.dir.x, t1, localRay.origin.x) > -sliceOffset) ? 1e6 : t1;
+			t2 = (fma(localRay.dir.x, t2, localRay.origin.x) > -sliceOffset) ? 1e6 : t2;
 		} else {
-			t1 = (fma(ray.dir.x, t1, localorigin.x) < sliceOffset) ? 1e6 : t1;
-			t2 = (fma(ray.dir.x, t2, localorigin.x) < sliceOffset) ? 1e6 : t2;
+			t1 = (fma(localRay.dir.x, t1, localRay.origin.x) < sliceOffset) ? 1e6 : t1;
+			t2 = (fma(localRay.dir.x, t2, localRay.origin.x) < sliceOffset) ? 1e6 : t2;
 		}
 		t = (t1 > 0.0) ? t1 : t;
 		if (t2 < t) {
@@ -219,7 +222,7 @@ float SphereSliceIntersection(in Ray ray, in vec3 pos, in float radius, in float
 		t = 1e6;
 		isOutside = 1;
 	}
-	normal = normalize(fma(ray.dir, vec3(t), localorigin) * radius * isOutside);
+	normal = normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOutside) * transpose(matrix);
 	return t;
 }
 
@@ -232,7 +235,7 @@ void LensIntersection(in Ray ray, inout float hitdist, inout vec3 normal, inout 
 	float lensSlicePos[2] = {lensThickness / 2.0, -lensThickness / 2.0};
 	for (int i = 0; i < 2; i++) {
 		vec3 norm = vec3(0.0);
-		float t = SphereSliceIntersection(ray, object.pos - vec3(lensSlicePos[i], 0.0, 0.0), 2.0 * object.focalLength, lensThickness / 2.0, lensSlicePart[i], norm);
+		float t = SphereSliceIntersection(ray, object.pos - vec3(lensSlicePos[i], 0.0, 0.0), object.rotation, 2.0 * object.focalLength, lensThickness / 2.0, lensSlicePart[i], norm);
 		if (t < hitdist) {
 			hitdist = t;
 			normal = norm;
@@ -286,6 +289,7 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 	
 	lens object;
 	object.pos = vec3(5.0, 1.0, -4.0);
+	object.rotation = vec3(45.0, 120.0, 45.0);
 	object.radius = 1.0;
 	object.focalLength = 1.0;
 	object.materialID = 0;
@@ -315,16 +319,16 @@ float RandomFloat(inout uint seed) {
 	return float(seed) / 0xFFFFFFFFu;
 }
 
-uint GenerateSeed(in uint x, in uint y, in uint k) {
+uint GenerateSeed(in uvec2 xy, in uint k) {
 	// Actually This Is Not The Correct Way To Generate Seed
 	// This Is The Correct Implementation Which Has No Overlapping:
 	/* uint seed = (resolution.x * resolution.y) * (frame - 1) + k;
-	   seed += x + resolution.x * y;*/
+	   seed += xy.x + resolution.x * xy.y;*/
 	// But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
 	// That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result
 	uint seed = (frame - 1) + k;
 	PCG32(seed);
-	seed = uint(mod(double(seed) + double(x + resolution.x * y), 0xFFFFFFFFu));
+	seed = uint(mod(double(seed) + double(xy.x + resolution.x * xy.y), 0xFFFFFFFFu));
 	return seed;
 }
 
@@ -333,7 +337,7 @@ vec3 UniformRandomPointsUnitSphere(inout uint seed){
 	// XYZ Coordinates Is Calculated Based On Longitude And Latitude
 	// Longitude Is Generated Uniformly And Sin Of Latitude Is Generated Uniformly
 	// Reason: If We Generate Latitude Uniformly, The Top And Bottom Of The Sphere Will Have More Points Than Other Regions
-	float phi = 2.0 * pi * RandomFloat(seed);
+	float phi = 2.0 * PI * RandomFloat(seed);
 	float sintheta = 2.0 * RandomFloat(seed) - 1.0;
 	float costheta = sqrt(1.0 - sintheta * sintheta);
 	float x = cos(phi) * costheta;
@@ -388,7 +392,7 @@ float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint se
 	vec3 normal = vec3(0.0);
 	material mat;
 	float hitdist = Intersection(ray, normal, mat);
-	if (hitdist < maxdist) {
+	if (hitdist < MAXDIST) {
 		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
 		ray.dir = RandomCosineDirectionHemisphere(seed, normal);
 		if (mat.emission.y > 0.0) {
@@ -419,10 +423,8 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 	return radiance;
 }
 
-vec3 Scene(in uint x, in uint y, in uint k) {
-	uint seed = GenerateSeed(x, y, k);
-	float tan_fov = tan(radians(FOV / 2.0));
-	vec2 uv = ((2.0 * vec2(x, y) - resolution) / resolution.y) * tan_fov;
+vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
+	uint seed = GenerateSeed(xy, k);
 	// SSAA
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
 	// Fix Camera Angle For The Rotation Function
@@ -432,24 +434,30 @@ vec3 Scene(in uint x, in uint y, in uint k) {
 	ray.origin = cameraPos;
 	mat3 m1 = RotateCamera(theta); // Can Be Optimized By Computing This Outside The Fragment Shader
 	vec3 m2 = vec3(uv, 1.0);
-	ray.dir = normalize(vec3(m2 * m1));
-	vec3 forward = normalize(vec3(vec3(0.0, 0.0, 1.0) * m1));
+	ray.dir = normalize(m2 * m1);
+	vec3 forward = normalize(vec3(0.0, 0.0, 1.0) * m1);
 
 	vec3 color = vec3(0.0);
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
 	// Chromatic Aberration
-	//float hitdist = 1e6;
-	//vec3 normal = vec3(0.0);
-	//material mat;
-	//LensIntersection(hitdist, ray, forward * 2.0, normal, mat);
-	ray.dir = refract(ray.dir, -forward, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.025));
+	float hitdist = 1e6;
+	vec3 normal = vec3(0.0);
+	material mat;
+	lens object;
+	object.pos = ray.origin + forward;
+	object.rotation = vec3(0.0, -theta.y / PI * 180.0 + 90.0, theta.x / PI * 180.0);
+	object.radius = 1.0;
+	object.focalLength = 1.0;
+	object.materialID = 0;
+	LensIntersection(ray, hitdist, normal, mat, object);
+	ray.origin += hitdist * ray.dir;
+	ray.dir = refract(ray.dir, normal, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.05));
+	LensIntersection(ray, hitdist, normal, mat, object);
+	ray.origin += hitdist * ray.dir;
+	ray.dir = refract(ray.dir, normal, RefractiveIndexWavelength(l, 1.010, 550.0, 0.05));
 	color += (TracePath(l, ray, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
-	color *= exposure;
-	//vec3 normal = vec3(0.0);
-	//material mat;
-	//Intersection(origin, dir, normal, mat);
-	//color += normal;
+	//color += hitdist;
 
 	return color;
 }
@@ -474,10 +482,15 @@ void Accumulate(inout vec3 color) {
 }
 
 void main() {
+	uvec2 xy = uvec2(gl_FragCoord.xy);
+	vec2 uv = ((2.0 * vec2(xy) - resolution) / resolution.y) * tan_fov;
+
 	vec3 color = vec3(0.0);
 	for (uint i = 0; i < samplesPerFrame; i++) {
-		color += Scene(uint(gl_FragCoord.x), uint(gl_FragCoord.y), i);
+		color += Scene(xy, uv, i);
 	}
+	color *= exposure;
 	Accumulate(color);
+
 	Fragcolor = vec4(color, 1.0);
 }
