@@ -12,6 +12,7 @@ uniform vec3 cameraPos;
 uniform float FOV;
 uniform float persistance;
 uniform float exposure;
+uniform float lensData[3];
 uniform int samplesPerFrame;
 uniform int pathLength;
 uniform float CIEXYZ2006[1323];
@@ -46,6 +47,7 @@ struct lens {
 	vec3 rotation;
 	float radius;
 	float focalLength;
+	bool isConverging;
 	int materialID;
 };
 
@@ -184,9 +186,10 @@ float BoxIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in vec3 size, o
 	return t;
 }
 
-float SphereSliceIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in float radius, in float sliceSize, in bool is1stSlice, out vec3 normal) {
+float SphereSliceIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in float radius, in float sliceSize, in bool is1stSlice, out vec3 normal, out int isOutside) {
 	// Ray-Intersection Of Sliced Sphere
 	// Slicing Based On Parameters Slice Size And Slice Side
+	// Slicing Is Done Using 1D Interval Checks
 	// Built By Solving The Same Equation Of Sphere
 	mat3 matrix = RotationMatrix(rotation);
 	Ray localRay;
@@ -201,7 +204,6 @@ float SphereSliceIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in floa
 	float c = dot(localRay.origin, localRay.origin) - (radius * radius);
 	float discriminant = b * b - 4.0 * a * c;
 	float t = 1e6;
-	int isOutside = 1;
 	if (discriminant >= 0.0) {
 		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
 		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
@@ -226,27 +228,34 @@ float SphereSliceIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in floa
 	return t;
 }
 
-void LensIntersection(in Ray ray, inout float hitdist, inout vec3 normal, inout material mat, in lens object) {
+void LensIntersection(in Ray ray, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat, in lens object) {
 	// Ray-Intersection Of Lens
 	// Done By Joining Two Slices Of Sphere
 	// Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
 	float lensThickness = 4.0 * object.focalLength - 2.0 * sqrt(4.0 * object.focalLength * object.focalLength - object.radius * object.radius);
 	bool lensSlicePart[2] = {true, false};
-	float lensSlicePos[2] = {lensThickness / 2.0, -lensThickness / 2.0};
+	float lensSlicePos[2] = {0.0, 0.0};
+	if (object.isConverging) {
+		lensSlicePos[0] = lensThickness / 2.0;
+		lensSlicePos[1] = -lensThickness / 2.0;
+	}
 	for (int i = 0; i < 2; i++) {
 		vec3 norm = vec3(0.0);
-		float t = SphereSliceIntersection(ray, object.pos - vec3(lensSlicePos[i], 0.0, 0.0), object.rotation, 2.0 * object.focalLength, lensThickness / 2.0, lensSlicePart[i], norm);
+		int isOut = 1;
+		float t = SphereSliceIntersection(ray, object.pos - vec3(lensSlicePos[i], 0.0, 0.0), object.rotation, 2.0 * object.focalLength, lensThickness / 2.0, lensSlicePart[i], norm, isOut);
 		if (t < hitdist) {
 			hitdist = t;
 			normal = norm;
+			isOutside = object.isConverging ? isOut : (1 - isOut);
 			mat = GetMaterial(object.materialID);
 		}
 	}
 }
 
 float Intersection(in Ray ray, out vec3 normal, out material mat) {
+	// Finds The Ray-Intersection Of Every Object In The Scene
 	float hitdist = 1e6;
-	
+	// Loop Over All The Spheres In The Scene
 	for (int i = 0; i < numObjects[0]; i++) {
 		int offset = 0;
 		sphere object;
@@ -261,7 +270,7 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 			mat = GetMaterial(object.materialID);
 		}
 	}
-
+	// Loop Over All The Planes In The Scene
 	for (int i = 0; i < numObjects[1]; i++) {
 		int offset = 5*numObjects[0];
 		plane object;
@@ -275,7 +284,7 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 			mat = GetMaterial(object.materialID);
 		}
 	}
-	
+	// Loop Over All The Cubes In The Scene
 	for (int i = 0; i < 1; i++) {
 		int offset = 0;
 		vec3 norm = vec3(0.0);
@@ -289,11 +298,13 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 	
 	lens object;
 	object.pos = vec3(5.0, 1.0, -4.0);
-	object.rotation = vec3(45.0, 120.0, 45.0);
+	object.rotation = vec3(0.0, 0.0, 0.0);
 	object.radius = 1.0;
-	object.focalLength = 1.0;
+	object.focalLength = 2.0;
+	object.isConverging = true;
 	object.materialID = 0;
-	LensIntersection(ray, hitdist, normal, mat, object);
+	int isOutside = 1;
+	LensIntersection(ray, hitdist, normal, isOutside, mat, object);
 
 	return hitdist;
 }
@@ -386,6 +397,17 @@ float RefractiveIndexWavelength(in float l, in float n, in float l_n, in float s
 	return fma(s, (l_n / l) - 1.0, n);
 }
 
+float RefractiveIndexBK7Glass(in float l) {
+	// Sellmeier Equation For Refractive Index Of BK7 Glass
+	l *= 1e-3;
+	float l2 = l * l;
+	float n2 = 1.0;
+	n2 += (1.03961212 * l2) / (l2 - 6.00069867e-3);
+	n2 += (0.231792344 * l2) / (l2 - 2.00179144e-2);
+	n2 += (1.01046945 * l2) / (l2 - 1.03560653e2);
+	return sqrt(n2);
+}
+
 float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint seed, out bool isTerminate) {
 	// Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
 	float radiance = 0.0;
@@ -423,6 +445,33 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 	return radiance;
 }
 
+void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, in vec2 theta, out bool isTerminate) {
+	// Trace The Path Through The Convex Lens
+	lens object;
+	object.radius = lensData[0];
+	object.focalLength = lensData[1];
+	object.isConverging = true;
+	object.pos = ray.origin + forwardDir * lensData[2];
+	object.rotation = vec3(0.0, -theta.y / PI * 180.0 + 90.0, theta.x / PI * 180.0);
+	object.materialID = 0;
+	for (int i = 0; i < 2; i++) {
+		float hitdist = 1e6;
+		vec3 normal = vec3(0.0);
+		int isOutside = 1;
+		material mat;
+		LensIntersection(ray, hitdist, normal, isOutside, mat, object);
+		if (hitdist < MAXDIST) {
+			float index = RefractiveIndexBK7Glass(l);
+			index = (isOutside == 1) ? (1.0 / index) : index;
+			ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
+			ray.dir = refract(ray.dir, normal, index);
+		} else {
+			isTerminate = true;
+			break;
+		}
+	}
+}
+
 vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	uint seed = GenerateSeed(xy, k);
 	// SSAA
@@ -435,29 +484,16 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	mat3 m1 = RotateCamera(theta); // Can Be Optimized By Computing This Outside The Fragment Shader
 	vec3 m2 = vec3(uv, 1.0);
 	ray.dir = normalize(m2 * m1);
-	vec3 forward = normalize(vec3(0.0, 0.0, 1.0) * m1);
+	vec3 forwardDir = normalize(vec3(0.0, 0.0, 1.0) * m1);
 
 	vec3 color = vec3(0.0);
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
-	// Chromatic Aberration
-	float hitdist = 1e6;
-	vec3 normal = vec3(0.0);
-	material mat;
-	lens object;
-	object.pos = ray.origin + forward;
-	object.rotation = vec3(0.0, -theta.y / PI * 180.0 + 90.0, theta.x / PI * 180.0);
-	object.radius = 1.0;
-	object.focalLength = 1.0;
-	object.materialID = 0;
-	LensIntersection(ray, hitdist, normal, mat, object);
-	ray.origin += hitdist * ray.dir;
-	ray.dir = refract(ray.dir, normal, 1.0 / RefractiveIndexWavelength(l, 1.010, 550.0, 0.05));
-	LensIntersection(ray, hitdist, normal, mat, object);
-	ray.origin += hitdist * ray.dir;
-	ray.dir = refract(ray.dir, normal, RefractiveIndexWavelength(l, 1.010, 550.0, 0.05));
-	color += (TracePath(l, ray, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
-	//color += hitdist;
+	bool isTerminate = false;
+	TracePathLens(l, ray, forwardDir, theta, isTerminate);
+	if (!isTerminate) {
+		color += (TracePath(l, ray, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
+	}
 
 	return color;
 }
