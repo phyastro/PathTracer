@@ -91,6 +91,26 @@ void UpdateCameraPos(glm::vec3& cameraPos, glm::vec3 deltaCamPos, glm::vec2 came
 	cameraPos = cameraPos + deltaCamPos * m;
 }
 
+float SpectralPowerDistribution(float l, float l_peak, float d, float invert) {
+	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
+	// Using Gaussian Function To Predict Spectral Radiance
+	// In Reality, Spectral Radiance Function Has Different Shapes For Different Objects Also Looks Much Different Than This
+	float x = (l - l_peak) / (2.0f * d * d);
+	float radiance = exp(-x * x);
+	radiance = glm::mix(radiance, 1.0f - radiance, invert);
+	return radiance;
+}
+
+float BlackBodyRadiation(float l, float T) {
+	// Plank's Law
+	return (1.1910429724e-16f * pow(l, -5.0f)) / (exp(0.014387768775f / (l * T)) - 1.0f);
+}
+
+float BlackBodyRadiationPeak(float T) {
+	// Derived By Substituting Wien's Displacement Law On Plank's Law
+	return 4.0956746759e-6f * pow(T, 5.0f);
+}
+
 void ItemsTable(const char* name, int& selection, int id, int size) {
 	for (int i = id; i < (size + id); i++) {
 		ImGui::PushID(i);
@@ -147,29 +167,6 @@ void SDLHandleEvents(bool& isRunning, glm::ivec2 resolution, glm::vec2& cursorPo
 	}
 }
 
-void AttachShader(GLuint program, GLenum type, const char* code) {
-	GLuint shader = glCreateShader(type);
-	glShaderSource(shader, 1, &code, NULL);
-	glCompileShader(shader);
-	GLint success;
-	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-	if (success != GL_TRUE) {
-		char msg[1024];
-		glGetShaderInfoLog(shader, 1024, NULL, msg);
-		std::cout << "Shader Compile Error: " << std::endl << msg << std::endl;
-	}
-	glAttachShader(program, shader);
-	glDeleteShader(shader);
-}
-
-const std::string ReadFile(const char* FileName) {
-	std::ostringstream sstream;
-	std::ifstream File(FileName);
-	sstream << File.rdbuf();
-	const std::string FileData(sstream.str());
-	return FileData;
-}
-
 /* Thanks For Helping Me Here :)
 https://stackoverflow.com/a/65817254 */
 void flipSurface(SDL_Surface* surface)
@@ -194,6 +191,29 @@ void flipSurface(SDL_Surface* surface)
 	delete[] temp;
 
 	SDL_UnlockSurface(surface);
+}
+
+void AttachShader(GLuint program, GLenum type, const char* code) {
+	GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &code, NULL);
+	glCompileShader(shader);
+	GLint success;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+	if (success != GL_TRUE) {
+		char msg[1024];
+		glGetShaderInfoLog(shader, 1024, NULL, msg);
+		std::cout << "Shader Compile Error: " << std::endl << msg << std::endl;
+	}
+	glAttachShader(program, shader);
+	glDeleteShader(shader);
+}
+
+const std::string ReadFile(const char* FileName) {
+	std::ostringstream sstream;
+	std::ifstream File(FileName);
+	sstream << File.rdbuf();
+	const std::string FileData(sstream.str());
+	return FileData;
 }
 
 int main(int argc, char* argv[])
@@ -324,9 +344,9 @@ int main(int argc, char* argv[])
 	float FOV = 60.0f;
 	float persistance = 0.0625f;
 	float exposure = 1.0f;
-	float lensRadius = 0.5f;
+	float lensRadius = 1.3f;
 	float lensFocalLength = 1.0f;
-	float lensDistance = 0.25f;
+	float lensDistance = 0.50f;
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	bool isBeginning = true;
@@ -341,6 +361,7 @@ int main(int argc, char* argv[])
 	glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	bool isWindowFocused = false;
 	std::vector <float> frames;
+	std::vector <float> spectra;
 #endif
 
 	std::vector <sphere> spheres;
@@ -442,14 +463,26 @@ int main(int argc, char* argv[])
 				bool tmpIsInvert;
 				ImGui::Text("Reflection");
 				ImGui::PushID("Reflection");
-				isReset |= ImGui::DragFloat("Peak Wavelength", &materials[materialsSelection].reflection[0], 1.0f, 200.0f, 900.0f);
-				isReset |= ImGui::DragFloat("Spectrum Width", &materials[materialsSelection].reflection[1], 0.5f, 0.0f, 100.0f);
+				spectra.clear();
+				for (int i = 1; i < 101; i++) {
+					float x = 0.01f * float(i) * 330.0f + 390.0f;
+					spectra.push_back(SpectralPowerDistribution(x, materials[materialsSelection].reflection[0], materials[materialsSelection].reflection[1], materials[materialsSelection].reflection[2]));
+				}
+				ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+				isReset |= ImGui::DragFloat("Peak Lambda", &materials[materialsSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
+				isReset |= ImGui::DragFloat("Sigma", &materials[materialsSelection].reflection[1], 0.5f, 0.0f, 100.0f);
 				tmpIsInvert = (bool)materials[materialsSelection].reflection[2];
 				isReset |= ImGui::Checkbox("Invert", &tmpIsInvert);
 				materials[materialsSelection].reflection[2] = (float)tmpIsInvert;
 				ImGui::PopID();
 				ImGui::Text("Emission");
 				ImGui::PushID("Emission");
+				spectra.clear();
+				for (int i = 1; i < 101; i++) {
+					float x = 0.01f * float(i) * 1200.0f * 1e-9f;
+					spectra.push_back(BlackBodyRadiation(x, materials[materialsSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialsSelection].emission[0]));
+				}
+				ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
 				isReset |= ImGui::DragFloat("Temperature", &materials[materialsSelection].emission[0], 5.0f);
 				isReset |= ImGui::DragFloat("Luminosity", &materials[materialsSelection].emission[1], 0.1f);
 				ImGui::PopID();
@@ -498,7 +531,7 @@ int main(int argc, char* argv[])
 			glUniform2i(glGetUniformLocation(shaderProgram, "resolution"), width, height);
 		}
 		if (isReset || isBeginning) {
-			glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), glm::radians(cameraAngle.x), glm::radians(cameraAngle.y));
+			glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), -cameraAngle.y, cameraAngle.x);
 			glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
 			glUniform1f(glGetUniformLocation(shaderProgram, "FOV"), FOV);
 			glUniform1f(glGetUniformLocation(shaderProgram, "persistance"), persistance);

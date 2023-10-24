@@ -24,8 +24,6 @@ uniform sampler2D screenTexture;
 #define MAXDIST 1e5
 #define PI 3.141592653589792623810034526344
 
-float tan_fov = tan(radians(FOV / 2.0));
-
 struct Ray {
 	vec3 origin;
 	vec3 dir;
@@ -78,16 +76,6 @@ float SampleSpectra(in float start, in float end, in float rand){
 float SpectraPDF(in float start, in float end){
 	// Uniform PDF
 	return 1.0 / (end - start);
-}
-
-// http://www.songho.ca/opengl/gl_anglestoaxes.html
-mat3 RotateCamera(in vec2 theta) {
-	// Builds Rotation Matrix Based On Given Camera Angle
-	vec2 sinxy = sin(theta);
-	vec2 cosxy = cos(theta);
-	mat3 mX = mat3(1.0, 0.0, 0.0, 0.0, cosxy.x, -sinxy.x, 0.0, sinxy.x, cosxy.x);
-	mat3 mY = mat3(cosxy.y, 0.0, sinxy.y, 0.0, 1.0, 0.0, -sinxy.y, 0.0, cosxy.y);
-	return mX * mY;
 }
 
 // http://www.songho.ca/opengl/gl_anglestoaxes.html
@@ -297,10 +285,10 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 	}
 	
 	lens object;
-	object.pos = vec3(5.0, 1.0, -4.0);
+	object.pos = vec3(5.0, 1.3, -4.0);
 	object.rotation = vec3(0.0, 0.0, 0.0);
-	object.radius = 1.0;
-	object.focalLength = 2.0;
+	object.radius = 1.3;
+	object.focalLength = 1.0;
 	object.isConverging = true;
 	object.materialID = 0;
 	int isOutside = 1;
@@ -445,14 +433,14 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 	return radiance;
 }
 
-void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, in vec2 theta, out bool isTerminate) {
+void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, out bool isTerminate) {
 	// Trace The Path Through The Convex Lens
 	lens object;
 	object.radius = lensData[0];
 	object.focalLength = lensData[1];
 	object.isConverging = true;
 	object.pos = ray.origin + forwardDir * lensData[2];
-	object.rotation = vec3(0.0, -theta.y / PI * 180.0 + 90.0, theta.x / PI * 180.0);
+	object.rotation = vec3(0.0, 90.0 - cameraAngle.y, cameraAngle.x);
 	object.materialID = 0;
 	for (int i = 0; i < 2; i++) {
 		float hitdist = 1e6;
@@ -476,12 +464,10 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	uint seed = GenerateSeed(xy, k);
 	// SSAA
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
-	// Fix Camera Angle For The Rotation Function
-	vec2 theta = vec2(-cameraAngle.y, cameraAngle.x);
 
 	Ray ray;
 	ray.origin = cameraPos;
-	mat3 m1 = RotateCamera(theta); // Can Be Optimized By Computing This Outside The Fragment Shader
+	mat3 m1 = RotationMatrix(vec3(cameraAngle, 0.0)); // Can Be Optimized By Computing This Outside The Fragment Shader
 	vec3 m2 = vec3(uv, 1.0);
 	ray.dir = normalize(m2 * m1);
 	vec3 forwardDir = normalize(vec3(0.0, 0.0, 1.0) * m1);
@@ -490,7 +476,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
 	bool isTerminate = false;
-	TracePathLens(l, ray, forwardDir, theta, isTerminate);
+	TracePathLens(l, ray, forwardDir, isTerminate);
 	if (!isTerminate) {
 		color += (TracePath(l, ray, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
 	}
@@ -519,7 +505,7 @@ void Accumulate(inout vec3 color) {
 
 void main() {
 	uvec2 xy = uvec2(gl_FragCoord.xy);
-	vec2 uv = ((2.0 * vec2(xy) - resolution) / resolution.y) * tan_fov;
+	vec2 uv = ((2.0 * vec2(xy) - resolution) / resolution.y) * tan(FOV * 0.00872664625997);
 
 	vec3 color = vec3(0.0);
 	for (uint i = 0; i < samplesPerFrame; i++) {
