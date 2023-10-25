@@ -12,7 +12,7 @@ uniform vec3 cameraPos;
 uniform float FOV;
 uniform float persistance;
 uniform float exposure;
-uniform float lensData[3];
+uniform vec3 lensData;
 uniform int samplesPerFrame;
 uniform int pathLength;
 uniform float CIEXYZ2006[1323];
@@ -80,7 +80,7 @@ float SpectraPDF(in float start, in float end){
 
 // http://www.songho.ca/opengl/gl_anglestoaxes.html
 mat3 RotationMatrix(in vec3 angle) {
-	// Builds Rotation Matrix Based On Given Angle
+	// Builds Rotation Matrix Depending On Given Angle
 	angle *= 0.0174532925199;
 	vec3 sinxyz = sin(angle);
 	vec3 cosxyz = cos(angle);
@@ -101,6 +101,7 @@ material GetMaterial(in int index) {
 	return material;
 }
 
+// TODO: Return Booleans And Return Inside IFs To Get Results Little Faster
 float SphereIntersection(in Ray ray, in vec3 pos, in float radius, out vec3 normal) {
 	// Ray-Intersection Of Sphere
 	// Built By Solving The Equation: x^2 + y^2 + z^2 = r^2
@@ -403,18 +404,30 @@ float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint se
 	material mat;
 	float hitdist = Intersection(ray, normal, mat);
 	if (hitdist < MAXDIST) {
-		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
-		ray.dir = RandomCosineDirectionHemisphere(seed, normal);
 		if (mat.emission.y > 0.0) {
 			radiance = fma(Emit(l, mat), rayradiance, radiance);
+			// Terminate The Path If The Ray Hits The Light Source
 			isTerminate = true;
+			return radiance;
 		}
 		rayradiance *= SpectralPowerDistribution(l, mat.reflection.x, mat.reflection.y, int(mat.reflection.z));
+		// Russian Roulette
+		// Probability Of The Ray Can Be Anything From 0 To 1
+		float rayProbability = clamp(rayradiance, 0.0, 0.99);
+		if (RandomFloat(seed) > rayProbability) {
+			// Randomly Terminate Ray Based On Probability
+			isTerminate = true;
+			return radiance;
+		}
+		// Add Energy Which Was Lost By Terminating Rays
+		rayradiance *= 1.0 / rayProbability;
+		// Compute Next Ray's Origin And Direction
+		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
+		ray.dir = RandomCosineDirectionHemisphere(seed, normal);
 	}
 	else {
 		isTerminate = true;
 	}
-
 	return radiance;
 }
 
@@ -435,11 +448,12 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 
 void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, out bool isTerminate) {
 	// Trace The Path Through The Convex Lens
+	// Therefore, We Get Physically Accurate Lens Distortion And Chromatic Aberration Effects
 	lens object;
-	object.radius = lensData[0];
-	object.focalLength = lensData[1];
+	object.radius = lensData.x;
+	object.focalLength = lensData.y;
 	object.isConverging = true;
-	object.pos = ray.origin + forwardDir * lensData[2];
+	object.pos = ray.origin + forwardDir * lensData.z;
 	object.rotation = vec3(0.0, 90.0 - cameraAngle.y, cameraAngle.x);
 	object.materialID = 0;
 	for (int i = 0; i < 2; i++) {
@@ -467,7 +481,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 
 	Ray ray;
 	ray.origin = cameraPos;
-	mat3 m1 = RotationMatrix(vec3(cameraAngle, 0.0)); // Can Be Optimized By Computing This Outside The Fragment Shader
+	mat3 m1 = RotationMatrix(vec3(cameraAngle, 0.0));
 	vec3 m2 = vec3(uv, 1.0);
 	ray.dir = normalize(m2 * m1);
 	vec3 forwardDir = normalize(vec3(0.0, 0.0, 1.0) * m1);
@@ -488,8 +502,7 @@ void Accumulate(inout vec3 color) {
 	// Temporal Accumulation Based On Given Parameters When Scene Is Dynamic And Accumulation When Scene Is Static
 	// Simulation Of Persistance Using Temporal Accumulation
 	// The Idea Is To Multiply Color Value By 1/256 In A Number Of Frames
-	// To Do That, Multiply A Constant[0, 1] Each Frame
-	// Find That Constant Based On Given Parameters
+	// Find The Constant Based On Given Parameters
 	// Then We Get, x^numFrames = 2^(-8) Where x Is Multiply Constant
 	// Also We Know That, numFrames = FPS * time(The Amount Of Time Will Be Needed To Reach 1/256)
 	// Therefore, x = 2^(-8 / (FPS*time))

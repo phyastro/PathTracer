@@ -344,7 +344,7 @@ int main(int argc, char* argv[])
 	float FOV = 60.0f;
 	float persistance = 0.0625f;
 	float exposure = 1.0f;
-	float lensRadius = 1.3f;
+	float lensRadius = 1.2f;
 	float lensFocalLength = 1.0f;
 	float lensDistance = 0.50f;
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
@@ -369,7 +369,7 @@ int main(int argc, char* argv[])
 	std::vector <plane> planes;
 	plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
 	std::vector <material> materials;
-	material newmaterial = { { 550.0f, 100.0f, 0 }, { 6000.0f, 0.0f } };
+	material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 	world1(cameraPos, cameraAngle, spheres, planes, materials);
 
 	while (isRunning) {
@@ -536,11 +536,7 @@ int main(int argc, char* argv[])
 			glUniform1f(glGetUniformLocation(shaderProgram, "FOV"), FOV);
 			glUniform1f(glGetUniformLocation(shaderProgram, "persistance"), persistance);
 			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), exposure);
-			std::vector <float> lensData;
-			lensData.push_back(lensRadius);
-			lensData.push_back(lensFocalLength);
-			lensData.push_back(lensDistance);
-			glUniform1fv(glGetUniformLocation(shaderProgram, "lensData"), (GLsizei)lensData.size(), lensData.data());
+			glUniform3f(glGetUniformLocation(shaderProgram, "lensData"), lensRadius, lensFocalLength, lensDistance);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
