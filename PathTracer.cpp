@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <filesystem>
 #include <vector>
 
 //#define RENDERING
@@ -208,7 +209,7 @@ void AttachShader(GLuint program, GLenum type, const char* code) {
 	glDeleteShader(shader);
 }
 
-const std::string ReadFile(const char* FileName) {
+const std::string ReadFile(std::string FileName) {
 	std::ostringstream sstream;
 	std::ifstream File(FileName);
 	sstream << File.rdbuf();
@@ -251,16 +252,26 @@ int main(int argc, char* argv[])
 	std::cout << "Vendor:   " << glGetString(GL_VENDOR) << std::endl;
 	std::cout << "Renderer: " << glGetString(GL_RENDERER) << std::endl;
 	std::cout << "Version:  " << glGetString(GL_VERSION) << std::endl;
-
+	
 	GLuint shaderProgram = glCreateProgram();
 	glObjectLabel(GL_PROGRAM, shaderProgram, -1, "ShaderProgram");
 	GLuint frameBufferProgram = glCreateProgram();
 	glObjectLabel(GL_PROGRAM, frameBufferProgram, -1, "FrameBufferProgram");
 
-	AttachShader(shaderProgram, GL_VERTEX_SHADER, ReadFile("Shaders/VertexShader.glsl").c_str());
-	AttachShader(shaderProgram, GL_FRAGMENT_SHADER, ReadFile("Shaders/PixelShader.glsl").c_str());
-	AttachShader(frameBufferProgram, GL_VERTEX_SHADER, ReadFile("Shaders/VertexShader.glsl").c_str());
-	AttachShader(frameBufferProgram, GL_FRAGMENT_SHADER, ReadFile("Shaders/PixelFrameBuffer.glsl").c_str());
+	std::string currentDirectory = std::filesystem::current_path().string();
+	std::replace(currentDirectory.begin(), currentDirectory.end(), '\\', '/');
+	currentDirectory = currentDirectory.append("/");
+	std::string vertexShaderDirectory = currentDirectory;
+	std::string pixelShaderDirectory = currentDirectory;
+	std::string pixelFrameBufferDirectory = currentDirectory;
+	vertexShaderDirectory.append("VertexShader.glsl");
+	pixelShaderDirectory.append("PixelShader.glsl");
+	pixelFrameBufferDirectory.append("PixelFrameBuffer.glsl");
+
+	AttachShader(shaderProgram, GL_VERTEX_SHADER, ReadFile(vertexShaderDirectory).c_str());
+	AttachShader(shaderProgram, GL_FRAGMENT_SHADER, ReadFile(pixelShaderDirectory).c_str());
+	AttachShader(frameBufferProgram, GL_VERTEX_SHADER, ReadFile(vertexShaderDirectory).c_str());
+	AttachShader(frameBufferProgram, GL_FRAGMENT_SHADER, ReadFile(pixelFrameBufferDirectory).c_str());
 	
 	float rectVertices[] = {
 		// Coords    // texCoords
@@ -625,18 +636,18 @@ int main(int argc, char* argv[])
 		samples += samplesPerFrame;
 		isBeginning = false;
 	}
-
+	
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
 	ImGui::DestroyContext();
-
+	
 	glDeleteTextures(1, &frameBufferTexture);
 	glDeleteBuffers(1, &rectVBO);
 	glDeleteVertexArrays(1, &rectVAO);
 	glDeleteFramebuffers(1, &FBO);
 	glDeleteProgram(frameBufferProgram);
 	glDeleteProgram(shaderProgram);
-
+	
 	SDL_GL_DeleteContext(context);
 	SDL_DestroyWindow(window);
 	SDL_Quit();
