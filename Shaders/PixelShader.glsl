@@ -73,9 +73,9 @@ float SampleSpectra(in float start, in float end, in float rand){
 	return (end - start) * rand + start;
 }
 
-float SpectraPDF(in float start, in float end){
-	// Uniform PDF
-	return 1.0 / (end - start);
+float InvSpectraPDF(in float start, in float end){
+	// Inverse Of Uniform PDF
+	return end - start;
 }
 
 // http://www.songho.ca/opengl/gl_anglestoaxes.html
@@ -171,7 +171,7 @@ float BoxIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in vec3 size, o
 		normal = step(k2, vec3(tF));
 	}
 	normal *= -sign(ray.dir);
-	normal = normalize(normal) * transpose(matrix);
+	normal = matrix * normalize(normal);
 	return t;
 }
 
@@ -213,7 +213,7 @@ float SphereSliceIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in floa
 		t = 1e6;
 		isOutside = 1;
 	}
-	normal = normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOutside) * transpose(matrix);
+	normal = matrix * normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOutside);
 	return t;
 }
 
@@ -421,7 +421,7 @@ float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint se
 		}
 		// Add Energy Which Was Lost By Terminating Rays
 		rayradiance *= 1.0 / rayProbability;
-		// Compute Next Ray's Origin And Direction
+		// Calculate The Next Ray's Origin And Direction
 		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
 		ray.dir = RandomCosineDirectionHemisphere(seed, normal);
 	}
@@ -463,8 +463,10 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, out bool isTer
 		material mat;
 		LensIntersection(ray, hitdist, normal, isOutside, mat, object);
 		if (hitdist < MAXDIST) {
+			// Calculate The Refractive Index
 			float index = RefractiveIndexBK7Glass(l);
 			index = (isOutside == 1) ? (1.0 / index) : index;
+			// Calculate The Next Ray's Origin And Direction
 			ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
 			ray.dir = refract(ray.dir, normal, index);
 		} else {
@@ -481,10 +483,9 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 
 	Ray ray;
 	ray.origin = cameraPos;
-	mat3 m1 = RotationMatrix(vec3(cameraAngle, 0.0));
-	vec3 m2 = vec3(uv, 1.0);
-	ray.dir = normalize(m2 * m1);
-	vec3 forwardDir = normalize(vec3(0.0, 0.0, 1.0) * m1);
+	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
+	ray.dir = normalize(vec3(uv, 1.0) * matrix);
+	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
 
 	vec3 color = vec3(0.0);
 
@@ -492,7 +493,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	bool isTerminate = false;
 	TracePathLens(l, ray, forwardDir, isTerminate);
 	if (!isTerminate) {
-		color += (TracePath(l, ray, seed) * WaveToXYZ(l)) / SpectraPDF(390.0, 720.0);
+		color += (TracePath(l, ray, seed) * WaveToXYZ(l)) * InvSpectraPDF(390.0, 720.0);
 	}
 
 	return color;
