@@ -345,12 +345,6 @@ int main(int argc, char* argv[])
 	glUniform1i(glGetUniformLocation(frameBufferProgram, "screenTexture"), 0);
 
 	bool isRunning = true;
-	int samplesPerFrame = 1;
-	int pathLength = 5;
-	uint64_t start = 0;
-	int frame = samplesPerFrame;
-	int samples = samplesPerFrame;
-	int prevSamples = samplesPerFrame;
 	float FPS = 60.0f;
 	float FOV = 60.0f;
 	float persistance = 0.0625f;
@@ -360,13 +354,18 @@ int main(int argc, char* argv[])
 	float lensDistance = 0.50f;
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
-	bool isBeginning = true;
+	int samplesPerFrame = 1;
+	int pathLength = 5;
 #ifdef RENDERING
+	exposure = EXPOSURE;
 	samplesPerFrame = NUMSAMPLESPERFRAME;
 	pathLength = PATHLENGTH;
-	start = SDL_GetTicks64();
-	exposure = EXPOSURE;
+	uint64_t start = SDL_GetTicks64();
 #endif
+	int frame = samplesPerFrame;
+	int samples = samplesPerFrame;
+	int prevSamples = samplesPerFrame;
+	bool isBeginning = true;
 #ifndef RENDERING
 	glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
 	glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -374,7 +373,6 @@ int main(int argc, char* argv[])
 	std::vector <float> frames;
 	std::vector <float> spectra;
 #endif
-
 	std::vector <sphere> spheres;
 	sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
 	std::vector <plane> planes;

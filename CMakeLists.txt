@@ -6,7 +6,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SDL2_DIR "${PROJECT_SOURCE_DIR}/includes/SDL2/cmake")
+set(SDL2_image_DIR "${PROJECT_SOURCE_DIR}/includes/SDL2/cmake")
 find_package(SDL2 REQUIRED)
+find_package(SDL2_image REQUIRED)
 
 add_executable(PathTracer PathTracer.cpp)
 
@@ -18,7 +20,7 @@ target_include_directories(PathTracer PUBLIC "${PROJECT_SOURCE_DIR}/includes")
 add_subdirectory(${PROJECT_SOURCE_DIR}/includes/glad)
 add_subdirectory(${PROJECT_SOURCE_DIR}/includes/imgui)
 add_subdirectory(${PROJECT_SOURCE_DIR}/includes/imgui/backends)
-target_link_libraries(PathTracer ${SDL2_LIBRARIES} glad imgui imgui_backends)
+target_link_libraries(PathTracer ${SDL2_LIBRARIES} SDL2_image::SDL2_image glad imgui imgui_backends)
 
 # Thank You So Much https://stackoverflow.com/questions/10671916/how-to-copy-dll-files-into-the-same-folder-as-the-executable-using-cmake/10672739#10672739
 # Check If It Is x86 Or x64
