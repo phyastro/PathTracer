@@ -40,6 +40,22 @@ struct plane {
 	int materialID;
 };
 
+struct box {
+	vec3 pos;
+	vec3 rotation;
+	vec3 size;
+	int materialID;
+};
+
+struct sphereSlice {
+	vec3 pos;
+	float radius;
+	float sliceSize;
+	bool is1stSlice;
+	vec3 rotation;
+	int materialID;
+};
+
 struct lens {
 	vec3 pos;
 	vec3 rotation;
@@ -101,52 +117,62 @@ material GetMaterial(in int index) {
 	return material;
 }
 
-// TODO: Return Booleans And Return Inside IFs To Get Results Little Faster
-float SphereIntersection(in Ray ray, in vec3 pos, in float radius, out vec3 normal) {
+bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Ray-Intersection Of Sphere
 	// Built By Solving The Equation: x^2 + y^2 + z^2 = r^2
-	vec3 localorigin = ray.origin - pos;
+	vec3 localorigin = ray.origin - object.pos;
 	float a = dot(ray.dir, ray.dir);
 	float b = 2.0 * dot(ray.dir, localorigin);
-	float c = dot(localorigin, localorigin) - (radius * radius);
+	float c = dot(localorigin, localorigin) - (object.radius * object.radius);
 	float discriminant = b * b - 4.0 * a * c;
 	float t = 1e6;
 	int isOutside = 1;
-	if (discriminant >= 0.0) {
-		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-		t = (t1 > 0.0) ? t1 : t2;
-		isOutside = (t1 > 0.0) ? 1 : -1;
+	if (discriminant < 0.0) {
+		return false;
 	}
+	float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+	float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+	t = (t1 > 0.0) ? t1 : t2;
+	isOutside = (t1 > 0.0) ? 1 : -1;
 	if (t < 1e-4) {
-		t = 1e6;
-		isOutside = 1;
+		return false;
 	}
-	normal = normalize(fma(ray.dir, vec3(t), localorigin) * isOutside);
-	return t;
+	if (t < hitdist) {
+		hitdist = t;
+		normal = normalize(fma(ray.dir, vec3(t), localorigin) * isOutside);
+		mat = GetMaterial(object.materialID);
+		return true;
+	}
+	return false;
 }
 
-float PlaneIntersection(in Ray ray, in vec3 pos, out vec3 normal) {
+bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Ray-Intersection Of Plane
 	// Built By Solving The Equation: z = 0
-	vec3 localorigin = ray.origin - pos;
+	vec3 localorigin = ray.origin - object.pos;
 	float t = -localorigin.y / ray.dir.y;
-	t = (t < 1e-4) ? 1e6 : t;
-	normal = vec3(0.0, 1.0, 0.0);
-	normal = faceforward(normal, ray.dir, normal);
-	return t;
+	if (t < 1e-4) {
+		return false;
+	}
+	if (t < hitdist) {
+		hitdist = t;
+		normal = faceforward(vec3(0.0, 1.0, 0.0), ray.dir, vec3(0.0, 1.0, 0.0));
+		mat = GetMaterial(object.materialID);
+		return true;
+	}
+	return false;
 }
 
 // Box Intersection By iq
 // https://www.shadertoy.com/view/ld23DV
-float BoxIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in vec3 size, out vec3 normal) {
+bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Ray-Intersection Of Box
-	mat3 matrix = RotationMatrix(rotation);
-	vec3 localorigin = (ray.origin - pos) * matrix;
+	mat3 matrix = RotationMatrix(object.rotation);
+	vec3 localorigin = (ray.origin - object.pos) * matrix;
 	ray.dir = ray.dir * matrix;
 	vec3 m = 1.0 / ray.dir;
 	vec3 n = m * localorigin;
-	vec3 k = abs(m) * size / 2.0;
+	vec3 k = abs(m) * object.size / 2.0;
 	vec3 k1 = -n - k;
 	vec3 k2 = -n + k;
 	float tN = max(k1.x, max(k1.y, k1.z));
@@ -154,70 +180,71 @@ float BoxIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in vec3 size, o
 	float t1 = min(tN, tF);
 	float t2 = max(tN, tF);
 	float t = 1e6;
-	if (t1 < 0) {
-		t = t2;
-	} else {
-		t = t1;
+	t = (t1 < 0.0) ? t2 : t1;
+	if ((tN > tF) || (t < 1e-4)) {
+		return false;
 	}
-	if (tN > tF) {
-		t = 1e6;
+	if (t < hitdist) {
+		hitdist = t;
+		normal = (tN > 0.0) ? step(vec3(tN), k1) : step(k2, vec3(tF));
+		normal *= -sign(ray.dir);
+		normal = matrix * normalize(normal);
+		mat = GetMaterial(object.materialID);
+		return true;
 	}
-	if (t < 1e-4) {
-		t = 1e6;
-	}
-	if (tN > 0) {
-		normal = step(vec3(tN), k1);
-	} else {
-		normal = step(k2, vec3(tF));
-	}
-	normal *= -sign(ray.dir);
-	normal = matrix * normalize(normal);
-	return t;
+	return false;
 }
 
-float SphereSliceIntersection(in Ray ray, in vec3 pos, in vec3 rotation, in float radius, in float sliceSize, in bool is1stSlice, out vec3 normal, out int isOutside) {
+bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in bool isSideInvert, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat) {
 	// Ray-Intersection Of Sliced Sphere
 	// Slicing Based On Parameters Slice Size And Slice Side
 	// Slicing Is Done Using 1D Interval Checks
 	// Built By Solving The Same Equation Of Sphere
-	mat3 matrix = RotationMatrix(rotation);
+	mat3 matrix = RotationMatrix(object.rotation);
 	Ray localRay;
-	float sliceOffset = radius - sliceSize;
-	localRay.origin = ray.origin - pos;
-	localRay.origin.x += is1stSlice ? -sliceSize : sliceSize;
+	float sliceOffset = object.radius - object.sliceSize;
+	localRay.origin = ray.origin - object.pos;
+	localRay.origin.x += object.is1stSlice ? -object.sliceSize : object.sliceSize;
 	localRay.origin = localRay.origin * matrix;
-	localRay.origin.x += is1stSlice ? -sliceOffset : sliceOffset;
+	localRay.origin.x += object.is1stSlice ? -sliceOffset : sliceOffset;
 	localRay.dir = ray.dir * matrix;
 	float a = dot(localRay.dir, localRay.dir);
 	float b = 2.0 * dot(localRay.dir, localRay.origin);
-	float c = dot(localRay.origin, localRay.origin) - (radius * radius);
+	float c = dot(localRay.origin, localRay.origin) - (object.radius * object.radius);
 	float discriminant = b * b - 4.0 * a * c;
 	float t = 1e6;
-	if (discriminant >= 0.0) {
-		float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-		float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-		if (is1stSlice) {
-			t1 = (fma(localRay.dir.x, t1, localRay.origin.x) > -sliceOffset) ? 1e6 : t1;
-			t2 = (fma(localRay.dir.x, t2, localRay.origin.x) > -sliceOffset) ? 1e6 : t2;
-		} else {
-			t1 = (fma(localRay.dir.x, t1, localRay.origin.x) < sliceOffset) ? 1e6 : t1;
-			t2 = (fma(localRay.dir.x, t2, localRay.origin.x) < sliceOffset) ? 1e6 : t2;
-		}
-		t = (t1 > 0.0) ? t1 : t;
-		if (t2 < t) {
-			t = t2;
-			isOutside = -1;
-		}
+	int isOut = 1;
+	if (discriminant < 0.0) {
+		return false;
+	}
+	float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+	float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+	if (object.is1stSlice) {
+		t1 = (fma(localRay.dir.x, t1, localRay.origin.x) > -sliceOffset) ? 1e6 : t1;
+		t2 = (fma(localRay.dir.x, t2, localRay.origin.x) > -sliceOffset) ? 1e6 : t2;
+	} else {
+		t1 = (fma(localRay.dir.x, t1, localRay.origin.x) < sliceOffset) ? 1e6 : t1;
+		t2 = (fma(localRay.dir.x, t2, localRay.origin.x) < sliceOffset) ? 1e6 : t2;
+	}
+	t = (t1 > 0.0) ? t1 : t;
+	if (t2 < t) {
+		t = t2;
+		isOut = -1;
 	}
 	if (t < 1e-4) {
-		t = 1e6;
-		isOutside = 1;
+		return false;
 	}
-	normal = matrix * normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOutside);
-	return t;
+	if (t < hitdist) {
+		hitdist = t;
+		normal = matrix * normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOut);
+		isOutside = (!isSideInvert) ? isOut : (1 - isOut);
+		mat = GetMaterial(object.materialID);
+		return true;
+	}
+	return false;
 }
 
-void LensIntersection(in Ray ray, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat, in lens object) {
+void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat) {
 	// Ray-Intersection Of Lens
 	// Done By Joining Two Slices Of Sphere
 	// Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
@@ -229,19 +256,18 @@ void LensIntersection(in Ray ray, inout float hitdist, inout vec3 normal, inout 
 		lensSlicePos[1] = -lensThickness / 2.0;
 	}
 	for (int i = 0; i < 2; i++) {
-		vec3 norm = vec3(0.0);
-		int isOut = 1;
-		float t = SphereSliceIntersection(ray, object.pos - vec3(lensSlicePos[i], 0.0, 0.0), object.rotation, 2.0 * object.focalLength, lensThickness / 2.0, lensSlicePart[i], norm, isOut);
-		if (t < hitdist) {
-			hitdist = t;
-			normal = norm;
-			isOutside = object.isConverging ? isOut : (1 - isOut);
-			mat = GetMaterial(object.materialID);
-		}
+		sphereSlice slice;
+		slice.pos = object.pos - vec3(lensSlicePos[i], 0.0, 0.0);
+		slice.radius = 2.0 * object.focalLength;
+		slice.sliceSize = lensThickness / 2.0;
+		slice.is1stSlice = lensSlicePart[i];
+		slice.rotation = object.rotation;
+		slice.materialID = object.materialID;
+		SphereSliceIntersection(ray, slice, !object.isConverging, hitdist, normal, isOutside, mat);
 	}
 }
 
-float Intersection(in Ray ray, out vec3 normal, out material mat) {
+float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 	// Finds The Ray-Intersection Of Every Object In The Scene
 	float hitdist = 1e6;
 	// Loop Over All The Spheres In The Scene
@@ -251,13 +277,7 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 		object.pos = vec3(objects[5*i+offset], objects[5*i+1+offset], objects[5*i+2+offset]);
 		object.radius = objects[5*i+3+offset];
 		object.materialID = int(objects[5*i+4+offset])-1;
-		vec3 norm = vec3(0.0);
-		float intersect = SphereIntersection(ray, object.pos, object.radius, norm);
-		if (intersect < hitdist) {
-			hitdist = intersect;
-			normal = norm;
-			mat = GetMaterial(object.materialID);
-		}
+		SphereIntersection(ray, object, hitdist, normal, mat);
 	}
 	// Loop Over All The Planes In The Scene
 	for (int i = 0; i < numObjects[1]; i++) {
@@ -265,24 +285,17 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 		plane object;
 		object.pos = vec3(objects[4*i+offset], objects[4*i+1+offset], objects[4*i+2+offset]);
 		object.materialID = int(objects[4*i+3+offset])-1;
-		vec3 norm = vec3(0.0);
-		float intersect = PlaneIntersection(ray, object.pos, norm);
-		if (intersect < hitdist) {
-			hitdist = intersect;
-			normal = norm;
-			mat = GetMaterial(object.materialID);
-		}
+		PlaneIntersection(ray, object, hitdist, normal, mat);
 	}
 	// Loop Over All The Cubes In The Scene
 	for (int i = 0; i < 1; i++) {
 		int offset = 0;
-		vec3 norm = vec3(0.0);
-		float intersect = BoxIntersection(ray, vec3(3.0, 0.75, 1.0), vec3(0.0, 58.31, 0.0), vec3(1.5, 1.5, 1.5), norm);
-		if (intersect < hitdist) {
-			hitdist = intersect;
-			normal = norm;
-			mat = GetMaterial(0);
-		}
+		box object;
+		object.pos = vec3(3.0, 0.75, 1.0);
+		object.rotation = vec3(0.0, 58.31, 0.0);
+		object.size = vec3(1.5, 1.5, 1.5);
+		object.materialID = 0;
+		BoxIntersection(ray, object, hitdist, normal, mat);
 	}
 	
 	lens object;
@@ -293,7 +306,7 @@ float Intersection(in Ray ray, out vec3 normal, out material mat) {
 	object.isConverging = true;
 	object.materialID = 0;
 	int isOutside = 1;
-	LensIntersection(ray, hitdist, normal, isOutside, mat, object);
+	LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 
 	return hitdist;
 }
@@ -461,7 +474,7 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, out bool isTer
 		vec3 normal = vec3(0.0);
 		int isOutside = 1;
 		material mat;
-		LensIntersection(ray, hitdist, normal, isOutside, mat, object);
+		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 		if (hitdist < MAXDIST) {
 			// Calculate The Refractive Index
 			float index = RefractiveIndexBK7Glass(l);
