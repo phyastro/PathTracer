@@ -32,17 +32,22 @@ struct plane {
 	int materialID;
 };
 
+struct box {
+	float pos[3];
+	float rotation[3];
+	float size[3];
+	int materialID;
+};
+
 struct material {
 	float reflection[3];
 	float emission[2];
 };
 
-void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<material>& materials) {
+void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<material>& materials) {
 	// Camera
 	cameraPos = glm::vec3(6.332f, 3.855f, 3.140f);
 	cameraAngle = glm::vec2(225.093f, -31.512f);
-	//cameraPos = glm::vec3(3.0f, 1.0f, -1.0f);
-	//cameraAngle = glm::vec2(288.4349488229f, 0.0f);
 
 	// Spheres
 	sphere sphere1 = { { 0.0f, 1.0f, 0.0f }, 1.0f, 1 };
@@ -56,6 +61,10 @@ void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	plane plane1 = { { 0.0f, 0.0f, 0.0f }, 1 };
 	planes.push_back(plane1);
 
+	// Boxes
+	box box1 = { { 3.0f, 0.75f, 0.0f }, { 0.0f, 58.31f, 0.0f }, { 1.5f, 1.5f, 1.5f }, 1 };
+	boxes.push_back(box1);
+	
 	// Materials
 	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
@@ -63,24 +72,6 @@ void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	materials.push_back(material1);
 	materials.push_back(material2);
 	materials.push_back(material3);
-}
-
-void world2(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<material>& materials) {
-	// Camera
-	cameraPos = glm::vec3(0.0f, 0.0f, -2.5f);
-	cameraAngle = glm::vec2(0.0f, 0.0f);
-
-	// Spheres
-	sphere sphere1 = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1};
-	sphere sphere2 = { { -2.5f, 2.0f, -2.0f }, 1.0f, 2 };
-	spheres.push_back(sphere1);
-	spheres.push_back(sphere2);
-
-	// Materials
-	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
-	material material2 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 0.2f } };
-	materials.push_back(material1);
-	materials.push_back(material2);
 }
 
 void UpdateCameraPos(glm::vec3& cameraPos, glm::vec3 deltaCamPos, glm::vec2 cameraAngle) {
@@ -377,9 +368,11 @@ int main(int argc, char* argv[])
 	sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
 	std::vector <plane> planes;
 	plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
+	std::vector <box> boxes;
+	box newbox = { {0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f, 0.0f }, {1.0f, 1.0f, 1.0f}, 1 };
 	std::vector <material> materials;
 	material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
-	world1(cameraPos, cameraAngle, spheres, planes, materials);
+	world1(cameraPos, cameraAngle, spheres, planes, boxes, materials);
 
 	while (isRunning) {
 		bool isReset = false;
@@ -434,26 +427,41 @@ int main(int argc, char* argv[])
 				if (ImGui::Button("Add New Plane")) {
 					planes.push_back(newplane);
 				}
+				if (ImGui::Button("Add New Box")) {
+					boxes.push_back(newbox);
+				}
 				ImGui::Separator();
 
-				if (objectsSelection < spheres.size()) {
-					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectsSelection + 1);
-					isReset |= ImGui::DragFloat3("Position", spheres[objectsSelection].pos, 0.01f);
-					isReset |= ImGui::DragFloat("Radius", &spheres[objectsSelection].radius, 0.01f);
-					isReset |= ImGui::DragInt("Material ID", &spheres[objectsSelection].materialID, 0.02f);
+				int numObjs = 0;
+				if ((objectsSelection < (numObjs + spheres.size())) && (objectsSelection > (numObjs - 1))) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectsSelection - numObjs + 1);
+					isReset |= ImGui::DragFloat3("Position", spheres[objectsSelection - numObjs].pos, 0.01f);
+					isReset |= ImGui::DragFloat("Radius", &spheres[objectsSelection - numObjs].radius, 0.01f);
+					isReset |= ImGui::DragInt("Material ID", &spheres[objectsSelection - numObjs].materialID, 0.02f);
 				}
-				if (objectsSelection < ((spheres.size() + planes.size())) && (objectsSelection > (spheres.size() - 1))) {
-					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectsSelection - spheres.size() + 1);
-					isReset |= ImGui::DragFloat3("Position", planes[objectsSelection - spheres.size()].pos, 0.01f);
-					isReset |= ImGui::DragInt("Material ID", &planes[objectsSelection - spheres.size()].materialID, 0.02f);
+				numObjs += (int)spheres.size();
+				if ((objectsSelection < (numObjs + planes.size())) && (objectsSelection > (numObjs - 1))) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectsSelection - numObjs + 1);
+					isReset |= ImGui::DragFloat3("Position", planes[objectsSelection - numObjs].pos, 0.01f);
+					isReset |= ImGui::DragInt("Material ID", &planes[objectsSelection - numObjs].materialID, 0.02f);
 				}
+				numObjs += (int)planes.size();
+				if ((objectsSelection < (numObjs + boxes.size())) && (objectsSelection > (numObjs - 1))) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", objectsSelection - numObjs + 1);
+					isReset |= ImGui::DragFloat3("Position", boxes[objectsSelection - numObjs].pos, 0.01f);
+					isReset |= ImGui::DragFloat3("Rotation", boxes[objectsSelection - numObjs].rotation, 0.1f);
+					isReset |= ImGui::DragFloat3("Size", boxes[objectsSelection - numObjs].size, 0.01f);
+					isReset |= ImGui::DragInt("Material ID", &boxes[objectsSelection - numObjs].materialID, 0.02f);
+				}
+				numObjs += (int)boxes.size();
 				ImGui::Separator();
 
 				if (ImGui::BeginTable("Objects Table", 1)) {
 					ImGui::TableSetupColumn("Object");
 					ImGui::TableHeadersRow();
 					ItemsTable("Sphere %i", objectsSelection, 0, (int)spheres.size());
-					ItemsTable("Plane %i", objectsSelection, (int)spheres.size(), (int)planes.size());
+					ItemsTable("Plane %i", objectsSelection, (int)(spheres.size()), (int)planes.size());
+					ItemsTable("Box %i", objectsSelection, (int)(spheres.size() + planes.size()), (int)boxes.size());
 					ImGui::EndTable();
 				}
 			}
@@ -549,7 +557,7 @@ int main(int argc, char* argv[])
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
-			int numObjects[] = { (int)spheres.size(), (int)planes.size() };
+			int numObjects[] = { (int)spheres.size(), (int)planes.size(), (int)boxes.size() };
 			glUniform1iv(glGetUniformLocation(shaderProgram, "numObjects"), sizeof(numObjects) / sizeof(int), numObjects);
 			std::vector <float> objectsArray;
 			for (int i = 0; i < spheres.size(); i++) {
@@ -564,6 +572,18 @@ int main(int argc, char* argv[])
 				objectsArray.push_back(planes[i].pos[1]);
 				objectsArray.push_back(planes[i].pos[2]);
 				objectsArray.push_back((float)planes[i].materialID);
+			}
+			for (int i = 0; i < boxes.size(); i++) {
+				objectsArray.push_back(boxes[i].pos[0]);
+				objectsArray.push_back(boxes[i].pos[1]);
+				objectsArray.push_back(boxes[i].pos[2]);
+				objectsArray.push_back(boxes[i].rotation[0]);
+				objectsArray.push_back(boxes[i].rotation[1]);
+				objectsArray.push_back(boxes[i].rotation[2]);
+				objectsArray.push_back(boxes[i].size[0]);
+				objectsArray.push_back(boxes[i].size[1]);
+				objectsArray.push_back(boxes[i].size[2]);
+				objectsArray.push_back((float)boxes[i].materialID);
 			}
 			glUniform1fv(glGetUniformLocation(shaderProgram, "objects"), (GLsizei)objectsArray.size(), objectsArray.data());
 			std::vector <float> materialsArray;

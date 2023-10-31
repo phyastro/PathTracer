@@ -270,43 +270,46 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 	// Finds The Ray-Intersection Of Every Object In The Scene
 	float hitdist = 1e6;
-	// Loop Over All The Spheres In The Scene
+	int offset = 0;
+	// Iterate Over All The Spheres In The Scene
 	for (int i = 0; i < numObjects[0]; i++) {
-		int offset = 0;
 		sphere object;
 		object.pos = vec3(objects[5*i+offset], objects[5*i+1+offset], objects[5*i+2+offset]);
 		object.radius = objects[5*i+3+offset];
 		object.materialID = int(objects[5*i+4+offset])-1;
 		SphereIntersection(ray, object, hitdist, normal, mat);
 	}
-	// Loop Over All The Planes In The Scene
+	offset += 5*numObjects[0];
+	// Iterate Over All The Planes In The Scene
 	for (int i = 0; i < numObjects[1]; i++) {
-		int offset = 5*numObjects[0];
 		plane object;
 		object.pos = vec3(objects[4*i+offset], objects[4*i+1+offset], objects[4*i+2+offset]);
 		object.materialID = int(objects[4*i+3+offset])-1;
 		PlaneIntersection(ray, object, hitdist, normal, mat);
 	}
-	// Loop Over All The Cubes In The Scene
-	for (int i = 0; i < 1; i++) {
-		int offset = 0;
+	offset += 4*numObjects[1];
+	// Iterate Over All The Cubes In The Scene
+	for (int i = 0; i < numObjects[2]; i++) {
 		box object;
-		object.pos = vec3(3.0, 0.75, 1.0);
-		object.rotation = vec3(0.0, 58.31, 0.0);
-		object.size = vec3(1.5, 1.5, 1.5);
-		object.materialID = 0;
+		object.pos = vec3(objects[10*i+offset], objects[10*i+1+offset], objects[10*i+2+offset]);
+		object.rotation = vec3(objects[10*i+3+offset], objects[10*i+4+offset], objects[10*i+5+offset]);
+		object.size = vec3(objects[10*i+6+offset], objects[10*i+7+offset], objects[10*i+8+offset]);
+		object.materialID = int(objects[10*i+9+offset])-1;
 		BoxIntersection(ray, object, hitdist, normal, mat);
 	}
-	
-	lens object;
-	object.pos = vec3(5.0, 1.3, -4.0);
-	object.rotation = vec3(0.0, 0.0, 0.0);
-	object.radius = 1.3;
-	object.focalLength = 1.0;
-	object.isConverging = true;
-	object.materialID = 0;
-	int isOutside = 1;
-	LensIntersection(ray, object, hitdist, normal, isOutside, mat);
+	offset += 10*numObjects[2];
+	// Iterate Over All The Lenses In The Scene
+	for (int i = 0; i < 1; i++) {
+		lens object;
+		object.pos = vec3(5.0, 1.3, -4.0);
+		object.rotation = vec3(0.0, 0.0, 0.0);
+		object.radius = 1.3;
+		object.focalLength = 1.0;
+		object.isConverging = true;
+		object.materialID = 0;
+		int isOutside = 1;
+		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
+	}
 
 	return hitdist;
 }
