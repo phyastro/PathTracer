@@ -299,17 +299,18 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 	}
 	offset += 10*numObjects[2];
 	// Iterate Over All The Lenses In The Scene
-	for (int i = 0; i < 1; i++) {
+	for (int i = 0; i < numObjects[3]; i++) {
 		lens object;
-		object.pos = vec3(5.0, 1.3, -4.0);
-		object.rotation = vec3(0.0, 0.0, 0.0);
-		object.radius = 1.3;
-		object.focalLength = 1.0;
-		object.isConverging = true;
-		object.materialID = 0;
+		object.pos = vec3(objects[10*i+offset], objects[10*i+1+offset], objects[10*i+2+offset]);
+		object.rotation = vec3(objects[10*i+3+offset], objects[10*i+4+offset], objects[10*i+5+offset]);
+		object.radius = objects[10*i+6+offset];
+		object.focalLength = objects[10*i+7+offset];
+		object.isConverging = bool(objects[10*i+8+offset]);
+		object.materialID = int(objects[10*i+9+offset])-1;
 		int isOutside = 1;
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 	}
+	offset += 10*numObjects[3];
 
 	return hitdist;
 }

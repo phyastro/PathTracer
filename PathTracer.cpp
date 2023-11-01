@@ -39,12 +39,21 @@ struct box {
 	int materialID;
 };
 
+struct lens {
+	float pos[3];
+	float rotation[3];
+	float radius;
+	float focalLength;
+	bool isConverging;
+	int materialID;
+};
+
 struct material {
 	float reflection[3];
 	float emission[2];
 };
 
-void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<material>& materials) {
+void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<lens>& lenses, std::vector<material>& materials) {
 	// Camera
 	cameraPos = glm::vec3(6.332f, 3.855f, 3.140f);
 	cameraAngle = glm::vec2(225.093f, -31.512f);
@@ -62,9 +71,13 @@ void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	planes.push_back(plane1);
 
 	// Boxes
-	box box1 = { { 3.0f, 0.75f, 0.0f }, { 0.0f, 58.31f, 0.0f }, { 1.5f, 1.5f, 1.5f }, 1 };
+	box box1 = { { 3.0f, 0.75f, 1.0f }, { 0.0f, 58.31f, 0.0f }, { 1.5f, 1.5f, 1.5f }, 1 };
 	boxes.push_back(box1);
 	
+	// Lenses
+	lens lens1 = { { 5.0f, 1.2f, -4.0f }, { 0.0f, 0.0f, 0.0f }, 1.2f, 1.0f, true, 1 };
+	lenses.push_back(lens1);
+
 	// Materials
 	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
@@ -340,7 +353,7 @@ int main(int argc, char* argv[])
 	float FOV = 60.0f;
 	float persistance = 0.0625f;
 	float exposure = 1.0f;
-	float lensRadius = 1.2f;
+	float lensDiameter = 2.4f;
 	float lensFocalLength = 1.0f;
 	float lensDistance = 0.50f;
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
@@ -369,10 +382,12 @@ int main(int argc, char* argv[])
 	std::vector <plane> planes;
 	plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
 	std::vector <box> boxes;
-	box newbox = { {0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f, 0.0f }, {1.0f, 1.0f, 1.0f}, 1 };
+	box newbox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1 };
+	std::vector <lens> lenses;
+	lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, true, 1 };
 	std::vector <material> materials;
 	material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
-	world1(cameraPos, cameraAngle, spheres, planes, boxes, materials);
+	world1(cameraPos, cameraAngle, spheres, planes, boxes, lenses, materials);
 
 	while (isRunning) {
 		bool isReset = false;
@@ -412,7 +427,7 @@ int main(int argc, char* argv[])
 				isReset |= ImGui::DragFloat("FOV", &FOV, 1.0f, 0.0f, 180.0f, "%0.0f");
 				isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
 				isReset |= ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
-				isReset |= ImGui::DragFloat("Aperture Size", &lensRadius, 0.01f, 0.01f, 100.0f, "%0.2f");
+				isReset |= ImGui::DragFloat("Aperture Size", &lensDiameter, 0.01f, 0.01f, 100.0f, "%0.2f");
 				isReset |= ImGui::DragFloat("Focal Length", &lensFocalLength, 0.01f, 0.5f, 100.0f, "%0.2f");
 				isReset |= ImGui::DragFloat("Lens Distance", &lensDistance, 0.01f, 0.01f, 100.0f, "%0.2f");
 			}
@@ -429,6 +444,9 @@ int main(int argc, char* argv[])
 				}
 				if (ImGui::Button("Add New Box")) {
 					boxes.push_back(newbox);
+				}
+				if (ImGui::Button("Add New Lens")) {
+					lenses.push_back(newlens);
 				}
 				ImGui::Separator();
 
@@ -454,6 +472,16 @@ int main(int argc, char* argv[])
 					isReset |= ImGui::DragInt("Material ID", &boxes[objectsSelection - numObjs].materialID, 0.02f);
 				}
 				numObjs += (int)boxes.size();
+				if ((objectsSelection < (numObjs + lenses.size())) && (objectsSelection > (numObjs - 1))) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", objectsSelection - numObjs + 1);
+					isReset |= ImGui::DragFloat3("Position", lenses[objectsSelection - numObjs].pos, 0.01f);
+					isReset |= ImGui::DragFloat3("Rotation", lenses[objectsSelection - numObjs].rotation, 0.1f);
+					isReset |= ImGui::DragFloat("Radius", &lenses[objectsSelection - numObjs].radius, 0.01f);
+					isReset |= ImGui::DragFloat("Focal Length", &lenses[objectsSelection - numObjs].focalLength, 0.01f);
+					isReset |= ImGui::Checkbox("Convex Lens", &lenses[objectsSelection - numObjs].isConverging);
+					isReset |= ImGui::DragInt("Material ID", &lenses[objectsSelection - numObjs].materialID, 0.02f);
+				}
+				numObjs += (int)lenses.size();
 				ImGui::Separator();
 
 				if (ImGui::BeginTable("Objects Table", 1)) {
@@ -462,6 +490,7 @@ int main(int argc, char* argv[])
 					ItemsTable("Sphere %i", objectsSelection, 0, (int)spheres.size());
 					ItemsTable("Plane %i", objectsSelection, (int)(spheres.size()), (int)planes.size());
 					ItemsTable("Box %i", objectsSelection, (int)(spheres.size() + planes.size()), (int)boxes.size());
+					ItemsTable("Lens %i", objectsSelection, (int)(spheres.size() + planes.size() + boxes.size()), (int)lenses.size());
 					ImGui::EndTable();
 				}
 			}
@@ -553,11 +582,11 @@ int main(int argc, char* argv[])
 			glUniform1f(glGetUniformLocation(shaderProgram, "FOV"), FOV);
 			glUniform1f(glGetUniformLocation(shaderProgram, "persistance"), persistance);
 			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), exposure);
-			glUniform3f(glGetUniformLocation(shaderProgram, "lensData"), lensRadius, lensFocalLength, lensDistance);
+			glUniform3f(glGetUniformLocation(shaderProgram, "lensData"), lensDiameter / 2.0f, lensFocalLength, lensDistance);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
-			int numObjects[] = { (int)spheres.size(), (int)planes.size(), (int)boxes.size() };
+			int numObjects[] = { (int)spheres.size(), (int)planes.size(), (int)boxes.size(), (int)lenses.size() };
 			glUniform1iv(glGetUniformLocation(shaderProgram, "numObjects"), sizeof(numObjects) / sizeof(int), numObjects);
 			std::vector <float> objectsArray;
 			for (int i = 0; i < spheres.size(); i++) {
@@ -584,6 +613,18 @@ int main(int argc, char* argv[])
 				objectsArray.push_back(boxes[i].size[1]);
 				objectsArray.push_back(boxes[i].size[2]);
 				objectsArray.push_back((float)boxes[i].materialID);
+			}
+			for (int i = 0; i < lenses.size(); i++) {
+				objectsArray.push_back(lenses[i].pos[0]);
+				objectsArray.push_back(lenses[i].pos[1]);
+				objectsArray.push_back(lenses[i].pos[2]);
+				objectsArray.push_back(lenses[i].rotation[0]);
+				objectsArray.push_back(lenses[i].rotation[1]);
+				objectsArray.push_back(lenses[i].rotation[2]);
+				objectsArray.push_back(lenses[i].radius);
+				objectsArray.push_back(lenses[i].focalLength);
+				objectsArray.push_back((float)lenses[i].isConverging);
+				objectsArray.push_back((float)lenses[i].materialID);
 			}
 			glUniform1fv(glGetUniformLocation(shaderProgram, "objects"), (GLsizei)objectsArray.size(), objectsArray.data());
 			std::vector <float> materialsArray;
