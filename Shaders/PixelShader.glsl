@@ -204,8 +204,11 @@ bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in bool isSideIn
 	Ray localRay;
 	float sliceOffset = object.radius - object.sliceSize;
 	localRay.origin = ray.origin - object.pos;
+	if (isSideInvert)
+		localRay.origin = localRay.origin * matrix;
 	localRay.origin.x += object.is1stSlice ? -object.sliceSize : object.sliceSize;
-	localRay.origin = localRay.origin * matrix;
+	if (!isSideInvert)
+		localRay.origin = localRay.origin * matrix;
 	localRay.origin.x += object.is1stSlice ? -sliceOffset : sliceOffset;
 	localRay.dir = ray.dir * matrix;
 	float a = dot(localRay.dir, localRay.dir);
