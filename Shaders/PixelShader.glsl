@@ -9,7 +9,6 @@ uniform int prevSamples;
 uniform float FPS;
 uniform vec2 cameraAngle;
 uniform vec3 cameraPos;
-uniform float FOV;
 uniform float persistance;
 uniform float exposure;
 uniform vec3 lensData;
@@ -195,7 +194,7 @@ bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 
 	return false;
 }
 
-bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in bool isSideInvert, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat) {
+bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSlicePos, in bool isSideInvert, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat) {
 	// Ray-Intersection Of Sliced Sphere
 	// Slicing Based On Parameters Slice Size And Slice Side
 	// Slicing Is Done Using 1D Interval Checks
@@ -204,12 +203,12 @@ bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in bool isSideIn
 	Ray localRay;
 	float sliceOffset = object.radius - object.sliceSize;
 	localRay.origin = ray.origin - object.pos;
-	if (isSideInvert)
-		localRay.origin = localRay.origin * matrix;
-	localRay.origin.x += object.is1stSlice ? -object.sliceSize : object.sliceSize;
-	if (!isSideInvert)
-		localRay.origin = localRay.origin * matrix;
-	localRay.origin.x += object.is1stSlice ? -sliceOffset : sliceOffset;
+	localRay.origin = localRay.origin * matrix;
+	if (object.is1stSlice) {
+		localRay.origin.x += localSlicePos - object.sliceSize - sliceOffset;
+	} else {
+		localRay.origin.x -= localSlicePos - object.sliceSize - sliceOffset;
+	}
 	localRay.dir = ray.dir * matrix;
 	float a = dot(localRay.dir, localRay.dir);
 	float b = 2.0 * dot(localRay.dir, localRay.origin);
@@ -240,7 +239,7 @@ bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in bool isSideIn
 	if (t < hitdist) {
 		hitdist = t;
 		normal = matrix * normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOut);
-		isOutside = (!isSideInvert) ? isOut : (1 - isOut);
+		isOutside = (!isSideInvert) ? isOut : -isOut;
 		mat = GetMaterial(object.materialID);
 		return true;
 	}
@@ -253,20 +252,19 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 	// Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
 	float lensThickness = 4.0 * object.focalLength - 2.0 * sqrt(4.0 * object.focalLength * object.focalLength - object.radius * object.radius);
 	bool lensSlicePart[2] = {true, false};
-	float lensSlicePos[2] = {0.0, 0.0};
+	float lensSlicePos = object.isConverging ? 0.0 : 0.0; // Gap Between Slices Of Lens IF REQUIRED
 	if (object.isConverging) {
-		lensSlicePos[0] = lensThickness / 2.0;
-		lensSlicePos[1] = -lensThickness / 2.0;
+		lensSlicePos += lensThickness / 2.0;
 	}
 	for (int i = 0; i < 2; i++) {
 		sphereSlice slice;
-		slice.pos = object.pos - vec3(lensSlicePos[i], 0.0, 0.0);
+		slice.pos = object.pos;
 		slice.radius = 2.0 * object.focalLength;
 		slice.sliceSize = lensThickness / 2.0;
 		slice.is1stSlice = lensSlicePart[i];
 		slice.rotation = object.rotation;
 		slice.materialID = object.materialID;
-		SphereSliceIntersection(ray, slice, !object.isConverging, hitdist, normal, isOutside, mat);
+		SphereSliceIntersection(ray, slice, lensSlicePos, !object.isConverging, hitdist, normal, isOutside, mat);
 	}
 }
 
@@ -467,13 +465,13 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 }
 
 void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, out bool isTerminate) {
-	// Trace The Path Through The Convex Lens
+	// Trace The Path Through The Concave Lens
 	// Therefore, We Get Physically Accurate Lens Distortion And Chromatic Aberration Effects
 	lens object;
 	object.radius = lensData.x;
 	object.focalLength = lensData.y;
-	object.isConverging = true;
-	object.pos = ray.origin + forwardDir * lensData.z;
+	object.isConverging = false;
+	object.pos = cameraPos + forwardDir * lensData.z;
 	object.rotation = vec3(0.0, 90.0 - cameraAngle.y, cameraAngle.x);
 	object.materialID = 0;
 	for (int i = 0; i < 2; i++) {
@@ -502,19 +500,17 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
 
 	Ray ray;
-	ray.origin = cameraPos;
 	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
-	ray.dir = normalize(vec3(uv, 1.0) * matrix);
+	ray.origin = cameraPos + (vec3(uv * 0.36, lensData.z - lensData.y) * matrix); // The cameraPos Will Be At The Focus Of The Concave Lens
 	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
+	ray.dir = forwardDir;
 
 	vec3 color = vec3(0.0);
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
 	bool isTerminate = false;
 	TracePathLens(l, ray, forwardDir, isTerminate);
-	if (!isTerminate) {
-		color += (TracePath(l, ray, seed) * WaveToXYZ(l)) * InvSpectraPDF(390.0, 720.0);
-	}
+	color += (TracePath(l, ray, seed) * WaveToXYZ(l)) * InvSpectraPDF(390.0, 720.0);
 
 	return color;
 }
@@ -539,7 +535,7 @@ void Accumulate(inout vec3 color) {
 
 void main() {
 	uvec2 xy = uvec2(gl_FragCoord.xy);
-	vec2 uv = ((2.0 * vec2(xy) - resolution) / resolution.y) * tan(FOV * 0.00872664625997);
+	vec2 uv = ((2.0 * vec2(xy) - resolution) / resolution.y);
 
 	vec3 color = vec3(0.0);
 	for (uint i = 0; i < samplesPerFrame; i++) {
