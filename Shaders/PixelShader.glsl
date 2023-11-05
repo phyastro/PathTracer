@@ -84,16 +84,6 @@ vec3 WaveToXYZ(in float wave) {
 	return XYZ;
 }
 
-float SampleSpectra(in float start, in float end, in float rand){
-	// Uniform Inverted CDF For Sampling
-	return (end - start) * rand + start;
-}
-
-float InvSpectraPDF(in float start, in float end){
-	// Inverse Of Uniform PDF
-	return end - start;
-}
-
 // http://www.songho.ca/opengl/gl_anglestoaxes.html
 mat3 RotationMatrix(in vec3 angle) {
 	// Builds Rotation Matrix Depending On Given Angle
@@ -351,8 +341,25 @@ uint GenerateSeed(in uvec2 xy, in uint k) {
 	return seed;
 }
 
-vec3 UniformRandomPointsUnitSphere(inout uint seed){
-	// Generates Uniformly Distributed Random Points On Unit Sphere
+float SampleSpectra(in float start, in float end, in float rand){
+	// Uniform Inverted CDF For Sampling
+	return (end - start) * rand + start;
+}
+
+float InvSpectraPDF(in float start, in float end){
+	// Inverse Of Uniform PDF
+	return end - start;
+}
+
+vec2 SampleUniformUnitDisk(inout uint seed) {
+	// Samples Uniformly Distributed Random Points On Unit Disk
+	float phi = 2.0 * PI * RandomFloat(seed);
+	float d = sqrt(RandomFloat(seed));
+	return d * vec2(cos(phi), sin(phi));
+}
+
+vec3 SampleUniformUnitSphere(inout uint seed){
+	// Samples Uniformly Distributed Random Points On Unit Sphere
 	// XYZ Coordinates Is Calculated Based On Longitude And Latitude
 	// Longitude Is Generated Uniformly And Sin Of Latitude Is Generated Uniformly
 	// Reason: If We Generate Latitude Uniformly, The Top And Bottom Of The Sphere Will Have More Points Than Other Regions
@@ -365,9 +372,9 @@ vec3 UniformRandomPointsUnitSphere(inout uint seed){
 	return vec3(x, y, z);
 }
 
-vec3 RandomCosineDirectionHemisphere(inout uint seed, in vec3 normal){
+vec3 SampleCosineDirectionHemisphere(inout uint seed, in vec3 normal){
 	// Generate Cosine Distributed Random Vectors Within Normals Hemisphere
-	vec3 sumvector = normal + UniformRandomPointsUnitSphere(seed);
+	vec3 sumvector = normal + SampleUniformUnitSphere(seed);
 	return normalize(sumvector);
 }
 
@@ -442,7 +449,7 @@ float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint se
 		rayradiance *= 1.0 / rayProbability;
 		// Calculate The Next Ray's Origin And Direction
 		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
-		ray.dir = RandomCosineDirectionHemisphere(seed, normal);
+		ray.dir = SampleCosineDirectionHemisphere(seed, normal);
 	}
 	else {
 		isTerminate = true;
@@ -466,8 +473,9 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 }
 
 void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
-	// Trace The Path Through The Concave Lens
+	// Trace The Path Through The Convex Lens
 	// Therefore, We Get Physically Accurate Lens Distortion And Chromatic Aberration Effects
+	// TODO: Fix Multiple Images Formed
 	lens object;
 	object.radius = lensData.x;
 	object.focalLength = lensData.y;
@@ -486,7 +494,7 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 			float index = RefractiveIndexBK7Glass(l);
 			index = (isOutside == 1) ? (1.0 / index) : index;
 			// Calculate The Next Ray's Origin And Direction
-			ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
+			ray.origin = fma(ray.dir, vec3(hitdist), fma(normal, vec3(1e-7), ray.origin));
 			ray.dir = refract(ray.dir, normal, index);
 		} else {
 			break;
@@ -502,9 +510,9 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 
 	Ray ray;
 	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
-	ray.origin = cameraPos + (vec3(uv, 0.0) * matrix); // The cameraPos Will Be At The Focus Of The Concave Lens
+	ray.origin = cameraPos + (vec3(uv, 0.0) * matrix);
 	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
-	vec3 pointOnDisk = cameraPos + (vec3(lensData.x * (vec2(RandomFloat(seed), RandomFloat(seed)) - 0.5), lensData.z) * matrix);
+	vec3 pointOnDisk = cameraPos + (vec3(lensData.x * SampleUniformUnitDisk(seed), lensData.z) * matrix);
 	ray.dir = normalize(pointOnDisk - ray.origin);
 
 	vec3 color = vec3(0.0);
