@@ -512,7 +512,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
 	ray.origin = cameraPos + (vec3(uv, 0.0) * matrix);
 	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
-	vec3 pointOnDisk = cameraPos + (vec3(lensData.x * SampleUniformUnitDisk(seed), lensData.z) * matrix);
+	vec3 pointOnDisk = cameraPos + (vec3(0.5 * lensData.x * SampleUniformUnitDisk(seed), lensData.z) * matrix);
 	ray.dir = normalize(pointOnDisk - ray.origin);
 
 	vec3 color = vec3(0.0);
