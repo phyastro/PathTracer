@@ -11,6 +11,7 @@ uniform vec2 cameraAngle;
 uniform vec3 cameraPos;
 uniform float persistance;
 uniform float exposure;
+uniform float cameraSize;
 uniform vec3 lensData;
 uniform int samplesPerFrame;
 uniform int pathLength;
@@ -464,13 +465,13 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 	return radiance;
 }
 
-void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, out bool isTerminate) {
+void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 	// Trace The Path Through The Concave Lens
 	// Therefore, We Get Physically Accurate Lens Distortion And Chromatic Aberration Effects
 	lens object;
 	object.radius = lensData.x;
 	object.focalLength = lensData.y;
-	object.isConverging = false;
+	object.isConverging = true;
 	object.pos = cameraPos + forwardDir * lensData.z;
 	object.rotation = vec3(0.0, 90.0 - cameraAngle.y, cameraAngle.x);
 	object.materialID = 0;
@@ -488,7 +489,6 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir, out bool isTer
 			ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
 			ray.dir = refract(ray.dir, normal, index);
 		} else {
-			isTerminate = true;
 			break;
 		}
 	}
@@ -498,18 +498,19 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	uint seed = GenerateSeed(xy, k);
 	// SSAA
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
+	uv *= -cameraSize * 0.5;
 
 	Ray ray;
 	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
-	ray.origin = cameraPos + (vec3(uv * 0.36, lensData.z - lensData.y) * matrix); // The cameraPos Will Be At The Focus Of The Concave Lens
+	ray.origin = cameraPos + (vec3(uv, 0.0) * matrix); // The cameraPos Will Be At The Focus Of The Concave Lens
 	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
-	ray.dir = forwardDir;
+	vec3 pointOnDisk = cameraPos + (vec3(lensData.x * (vec2(RandomFloat(seed), RandomFloat(seed)) - 0.5), lensData.z) * matrix);
+	ray.dir = normalize(pointOnDisk - ray.origin);
 
 	vec3 color = vec3(0.0);
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
-	bool isTerminate = false;
-	TracePathLens(l, ray, forwardDir, isTerminate);
+	TracePathLens(l, ray, forwardDir);
 	color += (TracePath(l, ray, seed) * WaveToXYZ(l)) * InvSpectraPDF(390.0, 720.0);
 
 	return color;
