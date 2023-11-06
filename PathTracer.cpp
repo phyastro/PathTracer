@@ -44,6 +44,7 @@ struct lens {
 	float rotation[3];
 	float radius;
 	float focalLength;
+	float thickness;
 	bool isConverging;
 	int materialID;
 };
@@ -75,7 +76,7 @@ void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& s
 	boxes.push_back(box1);
 	
 	// Lenses
-	lens lens1 = { { 5.0f, 1.2f, -4.0f }, { 0.0f, 0.0f, 0.0f }, 1.2f, 1.0f, true, 1 };
+	lens lens1 = { { 5.0f, 1.2f, -4.0f }, { 0.0f, 0.0f, 0.0f }, 1.2f, 1.0f, 0.0f, true, 1 };
 	lenses.push_back(lens1);
 
 	// Materials
@@ -353,8 +354,9 @@ int main(int argc, char* argv[])
 	float persistance = 0.0625f;
 	float exposure = 1.0f;
 	float cameraSize = 0.115f;
-	float lensDiameter = 0.010f;
-	float lensFocalLength = 0.060f;
+	float lensDiameter = 0.003f;
+	float lensFocalLength = 0.050f;
+	float lensThickness = 0.001f;
 	float lensDistance = 0.100f;
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -427,8 +429,9 @@ int main(int argc, char* argv[])
 				isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
 				isReset |= ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
 				isReset |= ImGui::DragFloat("Camera Size", &cameraSize, 0.005f, 0.01f, 5.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Aperture Size", &lensDiameter, 0.005f, 0.01f, 100.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Focal Length", &lensFocalLength, 0.005f, 0.01f, 100.0f, "%0.3f");
+				isReset |= ImGui::DragFloat("Aperture Size", &lensDiameter, 0.001f, 0.001f, 10.0f, "%0.3f");
+				isReset |= ImGui::DragFloat("Focal Length", &lensFocalLength, 0.001f, 0.001f, 10.0f, "%0.3f");
+				isReset |= ImGui::DragFloat("Thickness", &lensThickness, 0.001f, 0.0f, 1.0f, "%0.3f");
 				isReset |= ImGui::DragFloat("Lens Distance", &lensDistance, 0.005f, 0.01f, 100.0f, "%0.3f");
 				float lensFocalDist = (lensDistance * lensFocalLength) / (lensDistance - lensFocalLength);
 				ImGui::Text("Focal Distance: %0.3f", lensFocalDist);
@@ -480,8 +483,9 @@ int main(int argc, char* argv[])
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", objectsSelection - numObjs + 1);
 					isReset |= ImGui::DragFloat3("Position", lenses[objectsSelection - numObjs].pos, 0.01f);
 					isReset |= ImGui::DragFloat3("Rotation", lenses[objectsSelection - numObjs].rotation, 0.1f);
-					isReset |= ImGui::DragFloat("Radius", &lenses[objectsSelection - numObjs].radius, 0.01f);
-					isReset |= ImGui::DragFloat("Focal Length", &lenses[objectsSelection - numObjs].focalLength, 0.01f);
+					isReset |= ImGui::DragFloat("Radius", &lenses[objectsSelection - numObjs].radius, 0.001f);
+					isReset |= ImGui::DragFloat("Focal Length", &lenses[objectsSelection - numObjs].focalLength, 0.001f);
+					isReset |= ImGui::DragFloat("Thickness", &lenses[objectsSelection - numObjs].thickness, 0.001f);
 					isReset |= ImGui::Checkbox("Convex Lens", &lenses[objectsSelection - numObjs].isConverging);
 					isReset |= ImGui::DragInt("Material ID", &lenses[objectsSelection - numObjs].materialID, 0.02f);
 				}
@@ -586,7 +590,7 @@ int main(int argc, char* argv[])
 			glUniform1f(glGetUniformLocation(shaderProgram, "persistance"), persistance);
 			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), exposure);
 			glUniform1f(glGetUniformLocation(shaderProgram, "cameraSize"), cameraSize);
-			glUniform3f(glGetUniformLocation(shaderProgram, "lensData"), lensDiameter * 0.5f, lensFocalLength, lensDistance);
+			glUniform4f(glGetUniformLocation(shaderProgram, "lensData"), lensDiameter * 0.5f, lensFocalLength, lensThickness, lensDistance);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
@@ -627,6 +631,7 @@ int main(int argc, char* argv[])
 				objectsArray.push_back(lenses[i].rotation[2]);
 				objectsArray.push_back(lenses[i].radius);
 				objectsArray.push_back(lenses[i].focalLength);
+				objectsArray.push_back(lenses[i].thickness);
 				objectsArray.push_back((float)lenses[i].isConverging);
 				objectsArray.push_back((float)lenses[i].materialID);
 			}

@@ -12,7 +12,7 @@ uniform vec3 cameraPos;
 uniform float persistance;
 uniform float exposure;
 uniform float cameraSize;
-uniform vec3 lensData;
+uniform vec4 lensData;
 uniform int samplesPerFrame;
 uniform int pathLength;
 uniform float CIEXYZ2006[1323];
@@ -61,6 +61,7 @@ struct lens {
 	vec3 rotation;
 	float radius;
 	float focalLength;
+	float thickness;
 	bool isConverging;
 	int materialID;
 };
@@ -243,7 +244,7 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 	// Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
 	float lensThickness = 4.0 * object.focalLength - 2.0 * sqrt(4.0 * object.focalLength * object.focalLength - object.radius * object.radius);
 	bool lensSlicePart[2] = {true, false};
-	float lensSlicePos = object.isConverging ? 0.0 : 0.0; // Gap Between Slices Of Lens IF REQUIRED
+	float lensSlicePos = 0.5 * (object.isConverging ? object.thickness : -object.thickness); // Gap Between Slices Of Lens IF REQUIRED
 	if (object.isConverging) {
 		lensSlicePos += lensThickness / 2.0;
 	}
@@ -293,16 +294,17 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 	// Iterate Over All The Lenses In The Scene
 	for (int i = 0; i < numObjects[3]; i++) {
 		lens object;
-		object.pos = vec3(objects[10*i+offset], objects[10*i+1+offset], objects[10*i+2+offset]);
-		object.rotation = vec3(objects[10*i+3+offset], objects[10*i+4+offset], objects[10*i+5+offset]);
-		object.radius = objects[10*i+6+offset];
-		object.focalLength = objects[10*i+7+offset];
-		object.isConverging = bool(objects[10*i+8+offset]);
-		object.materialID = int(objects[10*i+9+offset])-1;
+		object.pos = vec3(objects[11*i+offset], objects[11*i+1+offset], objects[11*i+2+offset]);
+		object.rotation = vec3(objects[11*i+3+offset], objects[11*i+4+offset], objects[11*i+5+offset]);
+		object.radius = objects[11*i+6+offset];
+		object.focalLength = objects[11*i+7+offset];
+		object.thickness = objects[11*i+8+offset];
+		object.isConverging = bool(objects[11*i+9+offset]);
+		object.materialID = int(objects[11*i+10+offset])-1;
 		int isOutside = 1;
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 	}
-	offset += 10*numObjects[3];
+	offset += 11*numObjects[3];
 
 	return hitdist;
 }
@@ -475,12 +477,12 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 	// Trace The Path Through The Convex Lens
 	// Therefore, We Get Physically Accurate Lens Distortion And Chromatic Aberration Effects
-	// TODO: Fix Multiple Images Formed
 	lens object;
 	object.radius = lensData.x;
 	object.focalLength = lensData.y;
+	object.thickness = lensData.z;
 	object.isConverging = true;
-	object.pos = cameraPos + forwardDir * lensData.z;
+	object.pos = cameraPos + forwardDir * lensData.w;
 	object.rotation = vec3(0.0, 90.0 - cameraAngle.y, cameraAngle.x);
 	object.materialID = 0;
 	for (int i = 0; i < 2; i++) {
@@ -489,16 +491,12 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 		int isOutside = 1;
 		material mat;
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
-		if (hitdist < MAXDIST) {
-			// Calculate The Refractive Index
-			float index = RefractiveIndexBK7Glass(l);
-			index = (isOutside == 1) ? (1.0 / index) : index;
-			// Calculate The Next Ray's Origin And Direction
-			ray.origin = fma(ray.dir, vec3(hitdist), fma(normal, vec3(1e-7), ray.origin));
-			ray.dir = refract(ray.dir, normal, index);
-		} else {
-			break;
-		}
+		// Calculate The Refractive Index
+		float index = RefractiveIndexBK7Glass(l);
+		index = (isOutside == 1) ? (1.0 / index) : index;
+		// Calculate The Next Ray's Origin And Direction
+		ray.origin = fma(ray.dir, vec3(hitdist), fma(-normal, vec3(1e-4), ray.origin));
+		ray.dir = refract(ray.dir, normal, index);
 	}
 }
 
@@ -512,14 +510,14 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
 	ray.origin = cameraPos + (vec3(uv, 0.0) * matrix);
 	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
-	vec3 pointOnDisk = cameraPos + (vec3(0.5 * lensData.x * SampleUniformUnitDisk(seed), lensData.z) * matrix);
+	vec3 pointOnDisk = cameraPos + (vec3(lensData.x * SampleUniformUnitDisk(seed), lensData.w) * matrix);
 	ray.dir = normalize(pointOnDisk - ray.origin);
 
 	vec3 color = vec3(0.0);
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
 	TracePathLens(l, ray, forwardDir);
-	color += (TracePath(l, ray, seed) * WaveToXYZ(l)) * InvSpectraPDF(390.0, 720.0);
+	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InvSpectraPDF(390.0, 720.0);
 
 	return color;
 }
