@@ -54,10 +54,27 @@ struct material {
 	float emission[2];
 };
 
-void world1(glm::vec3& cameraPos, glm::vec2& cameraAngle, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<lens>& lenses, std::vector<material>& materials) {
+struct camera {
+	glm::vec3 pos;
+	glm::vec2 angle;
+	float exposure;
+	float size;
+	float aperture;
+	float lensFocalLength;
+	float lensThickness;
+	float lensDistance;
+};
+
+void world1(camera& Camera, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<lens>& lenses, std::vector<material>& materials) {
 	// Camera
-	cameraPos = glm::vec3(6.332f, 3.855f, 3.140f);
-	cameraAngle = glm::vec2(225.093f, -31.512f);
+	Camera.pos = glm::vec3(6.332f, 3.855f, 3.140f);
+	Camera.angle = glm::vec2(225.093f, -31.512f);
+	Camera.exposure = 1.0f;
+	Camera.size = 0.058f;
+	Camera.aperture = 0.0015f;
+	Camera.lensFocalLength = 0.0255f;
+	Camera.lensThickness = 0.0005f;
+	Camera.lensDistance = 0.050f;
 
 	// Spheres
 	sphere sphere1 = { { 0.0f, 1.0f, 0.0f }, 1.0f, 1 };
@@ -352,14 +369,6 @@ int main(int argc, char* argv[])
 	bool isRunning = true;
 	float FPS = 60.0f;
 	float persistance = 0.0625f;
-	float exposure = 1.0f;
-	float cameraSize = 0.058f;
-	float lensDiameter = 0.0015f;
-	float lensFocalLength = 0.0250f;
-	float lensThickness = 0.001f;
-	float lensDistance = 0.050f;
-	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
-	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	int samplesPerFrame = 1;
 	int pathLength = 5;
 #ifdef RENDERING
@@ -390,16 +399,17 @@ int main(int argc, char* argv[])
 	lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, true, 1 };
 	std::vector <material> materials;
 	material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
-	world1(cameraPos, cameraAngle, spheres, planes, boxes, lenses, materials);
+	camera Camera{};
+	world1(Camera, spheres, planes, boxes, lenses, materials);
 
 	while (isRunning) {
 		bool isReset = false;
 		bool isWinSizeChanged = false;
 
 #ifndef RENDERING
-		SDLHandleEvents(isRunning, glm::ivec2(width, height), cursorPos, cameraAngle, deltaCamPos, isReset, isWindowFocused);
+		SDLHandleEvents(isRunning, glm::ivec2(width, height), cursorPos, Camera.angle, deltaCamPos, isReset, isWindowFocused);
 		deltaCamPos *= 3.0f / FPS;
-		UpdateCameraPos(cameraPos, deltaCamPos, glm::radians(cameraAngle));
+		UpdateCameraPos(Camera.pos, deltaCamPos, glm::radians(Camera.angle));
 		glm::ivec2 tempWindowSize{};
 		SDL_GetWindowSize(window, &tempWindowSize.x, &tempWindowSize.y);
 		if ((tempWindowSize.x != width) || (tempWindowSize.y != height)) {
@@ -420,21 +430,21 @@ int main(int argc, char* argv[])
 			ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
 			ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
 			ImGui::Text("Samples: %i", prevSamples);
-			ImGui::Text("Camera Angle: (%0.3f, %0.3f)", cameraAngle.x, cameraAngle.y);
-			ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", cameraPos.x, cameraPos.y, cameraPos.z);
+			ImGui::Text("Camera Angle: (%0.3f, %0.3f)", Camera.angle.x, Camera.angle.y);
+			ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", Camera.pos.x, Camera.pos.y, Camera.pos.z);
 			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 0, 100);
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
 			ImGui::Separator();
 
 			if (ImGui::CollapsingHeader("Camera")) {
 				isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
-				isReset |= ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
-				isReset |= ImGui::DragFloat("Camera Size", &cameraSize, 0.005f, 0.005f, 5.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Aperture Size", &lensDiameter, 0.0005f, 0.0005f, 10.0f, "%0.4f");
-				isReset |= ImGui::DragFloat("Focal Length", &lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
-				isReset |= ImGui::DragFloat("Thickness", &lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
-				isReset |= ImGui::DragFloat("Lens Distance", &lensDistance, 0.005f, 0.005f, 100.0f, "%0.3f");
-				float fov = 2.0f * glm::degrees(::atan((cameraSize * 0.5f) / (lensDistance)));
+				isReset |= ImGui::DragFloat("Exposure", &Camera.exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
+				isReset |= ImGui::DragFloat("Camera Size", &Camera.size, 0.001f, 0.001f, 5.0f, "%0.3f");
+				isReset |= ImGui::DragFloat("Aperture Size", &Camera.aperture, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Focal Length", &Camera.lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Thickness", &Camera.lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Lens Distance", &Camera.lensDistance, 0.001f, 0.001f, 100.0f, "%0.3f");
+				float fov = 2.0f * glm::degrees(::atan(0.5f * Camera.size / Camera.lensDistance));
 				ImGui::Text("FOV: %0.0f", fov);
 			}
 			ImGui::Separator();
@@ -584,12 +594,12 @@ int main(int argc, char* argv[])
 			glUniform2i(glGetUniformLocation(shaderProgram, "resolution"), width, height);
 		}
 		if (isReset || isBeginning) {
-			glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), -cameraAngle.y, cameraAngle.x);
-			glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
+			glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), -Camera.angle.y, Camera.angle.x);
+			glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), Camera.pos.x, Camera.pos.y, Camera.pos.z);
 			glUniform1f(glGetUniformLocation(shaderProgram, "persistance"), persistance);
-			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), exposure);
-			glUniform1f(glGetUniformLocation(shaderProgram, "cameraSize"), cameraSize);
-			glUniform4f(glGetUniformLocation(shaderProgram, "lensData"), lensDiameter * 0.5f, lensFocalLength, lensThickness, lensDistance);
+			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), Camera.exposure);
+			glUniform1f(glGetUniformLocation(shaderProgram, "cameraSize"), Camera.size);
+			glUniform4f(glGetUniformLocation(shaderProgram, "lensData"), Camera.aperture * 0.5f, Camera.lensFocalLength, Camera.lensThickness, Camera.lensDistance);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
