@@ -353,11 +353,11 @@ int main(int argc, char* argv[])
 	float FPS = 60.0f;
 	float persistance = 0.0625f;
 	float exposure = 1.0f;
-	float cameraSize = 0.115f;
-	float lensDiameter = 0.003f;
-	float lensFocalLength = 0.050f;
+	float cameraSize = 0.058f;
+	float lensDiameter = 0.0015f;
+	float lensFocalLength = 0.0250f;
 	float lensThickness = 0.001f;
-	float lensDistance = 0.100f;
+	float lensDistance = 0.050f;
 	glm::vec2 cameraAngle = glm::vec2(0.0f, 0.0f);
 	glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	int samplesPerFrame = 1;
@@ -367,6 +367,7 @@ int main(int argc, char* argv[])
 	samplesPerFrame = NUMSAMPLESPERFRAME;
 	pathLength = PATHLENGTH;
 	uint64_t start = SDL_GetTicks64();
+	uint64_t end = start;
 #endif
 	int frame = samplesPerFrame;
 	int samples = samplesPerFrame;
@@ -428,13 +429,11 @@ int main(int argc, char* argv[])
 			if (ImGui::CollapsingHeader("Camera")) {
 				isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
 				isReset |= ImGui::DragFloat("Exposure", &exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
-				isReset |= ImGui::DragFloat("Camera Size", &cameraSize, 0.005f, 0.01f, 5.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Aperture Size", &lensDiameter, 0.001f, 0.001f, 10.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Focal Length", &lensFocalLength, 0.001f, 0.001f, 10.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Thickness", &lensThickness, 0.001f, 0.0f, 1.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Lens Distance", &lensDistance, 0.005f, 0.01f, 100.0f, "%0.3f");
-				float lensFocalDist = (lensDistance * lensFocalLength) / (lensDistance - lensFocalLength);
-				ImGui::Text("Focal Distance: %0.3f", lensFocalDist);
+				isReset |= ImGui::DragFloat("Camera Size", &cameraSize, 0.005f, 0.005f, 5.0f, "%0.3f");
+				isReset |= ImGui::DragFloat("Aperture Size", &lensDiameter, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Focal Length", &lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Thickness", &lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Lens Distance", &lensDistance, 0.005f, 0.005f, 100.0f, "%0.3f");
 				float fov = 2.0f * glm::degrees(::atan((cameraSize * 0.5f) / (lensDistance)));
 				ImGui::Text("FOV: %0.0f", fov);
 			}
@@ -677,21 +676,24 @@ int main(int argc, char* argv[])
 		SDL_GL_SwapWindow(window);
 
 #ifdef RENDERING
-		uint64_t end = SDL_GetTicks64();
+		uint64_t endPrevious = end;
+		end = SDL_GetTicks64();
+		double dtime = (double)(end - endPrevious) / 1000.0;
+		double speed = samplesPerFrame / dtime;
 		double timeElapsed = (double)(end - start) / 1000.0;
 		double percentageDone = (double)frame / (double)NUMSAMPLES;
 		double timeRemaining = (1.0 - percentageDone) * timeElapsed / percentageDone;
-		std::cout << "Samples: " << frame << " / " << NUMSAMPLES << "\t" << "Time Elapsed: " << timeElapsed << "s" << "\t" << "Time Remaining: " << timeRemaining << "s" << " \r";
+		printf("Samples: %i/%i SPP    Speed: %0.3f SPP/s    Time Elapsed: %0.3f s    Time Remaining: %0.3f s \r", frame, NUMSAMPLES, speed, timeElapsed, timeRemaining);
 		bool isRenderingDone = (frame + 1) > NUMSAMPLES;
 		if (isRenderingDone) {
-			std::cout << std::endl << "Rendering Completed In " << timeElapsed << "s." << std::endl;
-				
+			printf("\nRendering Completed In %0.3f s.", timeElapsed);
+
 			unsigned char* framePixels = new unsigned char[width * height * 4];
 			glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, framePixels);
 			SDL_Surface* frameSurface = SDL_CreateRGBSurfaceFrom(framePixels, width, height, 8 * 4, width * 4, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
 			flipSurface(frameSurface);
 			IMG_SavePNG(frameSurface, "render.png");
-			std::cout << "Rendered Image Has Been Successfully Saved." << std::endl;
+			printf("\nRendered Image Has Been Succesfully Saved.");
 			SDL_FreeSurface(frameSurface);
 			delete[] framePixels;
 

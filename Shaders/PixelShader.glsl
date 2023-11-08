@@ -244,7 +244,7 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 	// Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
 	float lensThickness = 4.0 * object.focalLength - 2.0 * sqrt(4.0 * object.focalLength * object.focalLength - object.radius * object.radius);
 	bool lensSlicePart[2] = {true, false};
-	float lensSlicePos = 0.5 * (object.isConverging ? object.thickness : -object.thickness); // Gap Between Slices Of Lens IF REQUIRED
+	float lensSlicePos = 0.5 * (object.isConverging ? object.thickness : -object.thickness); // Gap Between Slices Of Lens
 	if (object.isConverging) {
 		lensSlicePos += lensThickness / 2.0;
 	}
@@ -495,7 +495,7 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 		float index = RefractiveIndexBK7Glass(l);
 		index = (isOutside == 1) ? (1.0 / index) : index;
 		// Calculate The Next Ray's Origin And Direction
-		ray.origin = fma(ray.dir, vec3(hitdist), fma(-normal, vec3(1e-4), ray.origin));
+		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
 		ray.dir = refract(ray.dir, normal, index);
 	}
 }
