@@ -19,7 +19,6 @@
 const int NUMSAMPLES = 50000;
 const int NUMSAMPLESPERFRAME = 10;
 const int PATHLENGTH = 5;
-const float EXPOSURE = 1.0f;
 
 struct sphere {
 	float pos[3];
@@ -372,7 +371,6 @@ int main(int argc, char* argv[])
 	int samplesPerFrame = 1;
 	int pathLength = 5;
 #ifdef RENDERING
-	exposure = EXPOSURE;
 	samplesPerFrame = NUMSAMPLESPERFRAME;
 	pathLength = PATHLENGTH;
 	uint64_t start = SDL_GetTicks64();
