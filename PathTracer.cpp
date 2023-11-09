@@ -98,7 +98,7 @@ void world1(camera& Camera, std::vector<sphere>& spheres, std::vector<plane>& pl
 	// Materials
 	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
-	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 0.38f } };
+	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 0.5f } };
 	materials.push_back(material1);
 	materials.push_back(material2);
 	materials.push_back(material3);
@@ -703,7 +703,7 @@ int main(int argc, char* argv[])
 		for (int i = percentage; i < 100; i++) {
 			progressBar.push_back((char)32);
 		}
-		printf("%i%%|%s| %i/%i [%0.1fs|%0.1fs, %0.3fSPP/s] \r", percentage, progressBar.data(), frame, NUMSAMPLES, timeElapsed, timeRemaining, speed);
+		printf("Rendering: %i%%|%s| %i/%i [%0.1fs|%0.1fs, %0.3fSPP/s] \r", percentage, progressBar.data(), frame, NUMSAMPLES, timeElapsed, timeRemaining, speed);
 		bool isRenderingDone = (frame + 1) > NUMSAMPLES;
 		if (isRenderingDone) {
 			printf("\nRendering Completed In %0.3fs.", timeElapsed);
