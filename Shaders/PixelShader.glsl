@@ -476,7 +476,6 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 
 void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 	// Trace The Path Through The Convex Lens
-	// Therefore, We Get Physically Accurate Lens Distortion And Chromatic Aberration Effects
 	lens object;
 	object.radius = lensData.x;
 	object.focalLength = lensData.y;

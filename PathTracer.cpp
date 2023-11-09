@@ -16,9 +16,9 @@
 #include <vector>
 
 //#define RENDERING
-const int NUMSAMPLES = 50000;
-const int NUMSAMPLESPERFRAME = 10;
-const int PATHLENGTH = 5;
+const int NUMSAMPLES = 10000;
+const int NUMSAMPLESPERFRAME = 5;
+const int PATHLENGTH = 10000;
 
 struct sphere {
 	float pos[3];
@@ -72,7 +72,7 @@ void world1(camera& Camera, std::vector<sphere>& spheres, std::vector<plane>& pl
 	Camera.size = 0.058f;
 	Camera.aperture = 0.0015f;
 	Camera.lensFocalLength = 0.0255f;
-	Camera.lensThickness = 0.0005f;
+	Camera.lensThickness = 0.0010f;
 	Camera.lensDistance = 0.050f;
 
 	// Spheres
@@ -689,13 +689,20 @@ int main(int argc, char* argv[])
 		double dtime = (double)(end - endPrevious) / 1000.0;
 		double speed = samplesPerFrame / dtime;
 		double timeElapsed = (double)(end - start) / 1000.0;
-		double percentageDone = (double)frame / (double)NUMSAMPLES;
-		double timeRemaining = (1.0 - percentageDone) * timeElapsed / percentageDone;
-		printf("Samples: %i/%i SPP    Speed: %0.3f SPP/s    Time Elapsed: %0.3f s    Time Remaining: %0.3f s \r", frame, NUMSAMPLES, speed, timeElapsed, timeRemaining);
+		double renderProgress = (double)frame / (double)NUMSAMPLES;
+		int percentage = (int)(100.0 * renderProgress);
+		double timeRemaining = (1.0 - renderProgress) * timeElapsed / renderProgress;
+		std::string progressBar;
+		for (int i = 0; i < percentage; i++) {
+			progressBar.push_back((char)219);
+		}
+		for (int i = percentage; i < 100; i++) {
+			progressBar.push_back((char)32);
+		}
+		printf("%i%%|%s| %i/%i [%0.1fs|%0.1fs, %0.3fSPP/s] \r", percentage, progressBar.data(), frame, NUMSAMPLES, timeElapsed, timeRemaining, speed);
 		bool isRenderingDone = (frame + 1) > NUMSAMPLES;
 		if (isRenderingDone) {
-			printf("\nRendering Completed In %0.3f s.", timeElapsed);
-
+			printf("\nRendering Completed In %0.3fs.", timeElapsed);
 			unsigned char* framePixels = new unsigned char[width * height * 4];
 			glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, framePixels);
 			SDL_Surface* frameSurface = SDL_CreateRGBSurfaceFrom(framePixels, width, height, 8 * 4, width * 4, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
