@@ -15,7 +15,7 @@
 #include <filesystem>
 #include <vector>
 
-//#define RENDERING
+//#define OFFLINE_RENDER
 const int NUMSAMPLES = 10000;
 const int NUMSAMPLESPERFRAME = 5;
 const int PATHLENGTH = 10000;
@@ -250,15 +250,18 @@ int main(int argc, char* argv[])
 	int width = 1280;
 	int height = 720;
 	Uint32 WindowFlags;
-	#ifdef RENDERING
+
+#ifdef OFFLINE_RENDER
 		WindowFlags = SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL;
-	#else
+#else
 		WindowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
-	#endif
+#endif
+
 	SDL_Window* window = SDL_CreateWindow("Path Tracer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, WindowFlags);
 	SDL_GLContext context = SDL_GL_CreateContext(window);
 	SDL_GL_SetSwapInterval(0);  // VSYNC
 
+#ifndef OFFLINE_RENDER
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -268,6 +271,7 @@ int main(int argc, char* argv[])
 
 	ImGui_ImplSDL2_InitForOpenGL(window, context);
 	ImGui_ImplOpenGL3_Init(glsl_version);
+#endif
 
 	gladLoadGLLoader(SDL_GL_GetProcAddress);
 	std::cout << "Vendor:   " << glGetString(GL_VENDOR) << std::endl;
@@ -370,7 +374,7 @@ int main(int argc, char* argv[])
 	float persistance = 0.0625f;
 	int samplesPerFrame = 1;
 	int pathLength = 5;
-#ifdef RENDERING
+#ifdef OFFLINE_RENDER
 	samplesPerFrame = NUMSAMPLESPERFRAME;
 	pathLength = PATHLENGTH;
 	uint64_t start = SDL_GetTicks64();
@@ -380,7 +384,7 @@ int main(int argc, char* argv[])
 	int samples = samplesPerFrame;
 	int prevSamples = samplesPerFrame;
 	bool isBeginning = true;
-#ifndef RENDERING
+#ifndef OFFLINE_RENDER
 	glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
 	glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
 	bool isWindowFocused = false;
@@ -404,7 +408,7 @@ int main(int argc, char* argv[])
 		bool isReset = false;
 		bool isWinSizeChanged = false;
 
-#ifndef RENDERING
+#ifndef OFFLINE_RENDER
 		SDLHandleEvents(isRunning, glm::ivec2(width, height), cursorPos, Camera.angle, deltaCamPos, isReset, isWindowFocused);
 		deltaCamPos *= 3.0f / FPS;
 		UpdateCameraPos(Camera.pos, deltaCamPos, glm::radians(Camera.angle));
@@ -571,7 +575,7 @@ int main(int argc, char* argv[])
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
-#ifndef RENDERING
+#ifndef OFFLINE_RENDER
 		if (isWinSizeChanged) {
 			glViewport(0, 0, width, height);
 			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -666,7 +670,7 @@ int main(int argc, char* argv[])
 		glBindVertexArray(rectVAO);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 
-#ifndef RENDERING
+#ifndef OFFLINE_RENDER
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		FPS = 1.0f / io.DeltaTime;
@@ -683,7 +687,7 @@ int main(int argc, char* argv[])
 
 		SDL_GL_SwapWindow(window);
 
-#ifdef RENDERING
+#ifdef OFFLINE_RENDER
 		uint64_t endPrevious = end;
 		end = SDL_GetTicks64();
 		double dtime = (double)(end - endPrevious) / 1000.0;
@@ -721,18 +725,20 @@ int main(int argc, char* argv[])
 		samples += samplesPerFrame;
 		isBeginning = false;
 	}
-	
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplSDL2_Shutdown();
-	ImGui::DestroyContext();
-	
+
 	glDeleteTextures(1, &frameBufferTexture);
 	glDeleteBuffers(1, &rectVBO);
 	glDeleteVertexArrays(1, &rectVAO);
 	glDeleteFramebuffers(1, &FBO);
 	glDeleteProgram(frameBufferProgram);
 	glDeleteProgram(shaderProgram);
-	
+
+#ifndef OFFLINE_RENDER
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplSDL2_Shutdown();
+	ImGui::DestroyContext();
+#endif
+
 	SDL_GL_DeleteContext(context);
 	SDL_DestroyWindow(window);
 	SDL_Quit();
