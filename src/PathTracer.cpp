@@ -8,12 +8,7 @@
 #include "glm/gtc/matrix_transform.hpp"
 
 #include "spectrum.hpp"
-
-#include <iostream>
-#include <sstream>
-#include <fstream>
-#include <filesystem>
-#include <vector>
+#include "loader.hpp"
 
 //#define OFFLINE_RENDER
 const int NUMSAMPLES = 10000;
@@ -240,6 +235,9 @@ const std::string ReadFile(std::string FileName) {
 
 int main(int argc, char* argv[])
 {
+	if (!loader::load()) {
+		return -1;
+	}
 	SDL_Init(SDL_INIT_VIDEO);
 
 	const char* glsl_version = "#version 460";
