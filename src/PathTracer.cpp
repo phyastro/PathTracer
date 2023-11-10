@@ -299,11 +299,9 @@ int main(int argc, char* argv[])
 	AttachShader(frameBufferProgram, GL_FRAGMENT_SHADER, ReadFile(pixelFrameBufferDirectory).c_str());
 	
 	float rectVertices[] = {
-		// Coords    // texCoords
 		 1.0f, -1.0f,  1.0f, 0.0f,
 		-1.0f, -1.0f,  0.0f, 0.0f,
 		-1.0f,  1.0f,  0.0f, 1.0f,
-
 		 1.0f,  1.0f,  1.0f, 1.0f,
 		 1.0f, -1.0f,  1.0f, 0.0f,
 		-1.0f,  1.0f,  0.0f, 1.0f

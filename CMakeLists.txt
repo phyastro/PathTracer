@@ -10,7 +10,7 @@ set(SDL2_image_DIR "${PROJECT_SOURCE_DIR}/includes/SDL2/cmake")
 find_package(SDL2 REQUIRED)
 find_package(SDL2_image REQUIRED)
 
-add_executable(PathTracer PathTracer.cpp)
+add_executable(PathTracer src/PathTracer.cpp)
 
 target_include_directories(PathTracer PUBLIC ${SDL2_INCLUDE_DIRS})
 target_include_directories(PathTracer PUBLIC "${PROJECT_SOURCE_DIR}/includes/glad/include")
