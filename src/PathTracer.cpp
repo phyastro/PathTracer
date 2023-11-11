@@ -210,7 +210,7 @@ void flipSurface(SDL_Surface* surface)
 	SDL_UnlockSurface(surface);
 }
 
-void AttachShader(GLuint program, GLenum type, const char* code) {
+bool AttachShader(GLuint program, GLenum type, const char* code) {
 	GLuint shader = glCreateShader(type);
 	glShaderSource(shader, 1, &code, NULL);
 	glCompileShader(shader);
@@ -219,18 +219,13 @@ void AttachShader(GLuint program, GLenum type, const char* code) {
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetShaderInfoLog(shader, 1024, NULL, msg);
-		std::cout << "Shader Compile Error: " << std::endl << msg << std::endl;
+		fprintf(stderr, "Shader Compile Error: \n%s", msg);
+		return false;
 	}
 	glAttachShader(program, shader);
 	glDeleteShader(shader);
-}
 
-const std::string ReadFile(std::string FileName) {
-	std::ostringstream sstream;
-	std::ifstream File(FileName);
-	sstream << File.rdbuf();
-	const std::string FileData(sstream.str());
-	return FileData;
+	return true;
 }
 
 int main(int argc, char* argv[])
@@ -281,9 +276,7 @@ int main(int argc, char* argv[])
 	GLuint frameBufferProgram = glCreateProgram();
 	glObjectLabel(GL_PROGRAM, frameBufferProgram, -1, "FrameBufferProgram");
 
-	std::string currentDirectory = std::filesystem::current_path().string();
-	std::replace(currentDirectory.begin(), currentDirectory.end(), '\\', '/');
-	currentDirectory = currentDirectory.append("/");
+	std::string currentDirectory = loader::findCurrentDir();
 	std::string vertexShaderDirectory = currentDirectory;
 	std::string pixelShaderDirectory = currentDirectory;
 	std::string pixelFrameBufferDirectory = currentDirectory;
@@ -291,10 +284,13 @@ int main(int argc, char* argv[])
 	pixelShaderDirectory.append("PixelShader.glsl");
 	pixelFrameBufferDirectory.append("PixelFrameBuffer.glsl");
 
-	AttachShader(shaderProgram, GL_VERTEX_SHADER, ReadFile(vertexShaderDirectory).c_str());
-	AttachShader(shaderProgram, GL_FRAGMENT_SHADER, ReadFile(pixelShaderDirectory).c_str());
-	AttachShader(frameBufferProgram, GL_VERTEX_SHADER, ReadFile(vertexShaderDirectory).c_str());
-	AttachShader(frameBufferProgram, GL_FRAGMENT_SHADER, ReadFile(pixelFrameBufferDirectory).c_str());
+	bool isError = false;
+	isError |= !AttachShader(shaderProgram, GL_VERTEX_SHADER, loader::ReadFile(vertexShaderDirectory).c_str());
+	isError |= !AttachShader(shaderProgram, GL_FRAGMENT_SHADER, loader::ReadFile(pixelShaderDirectory).c_str());
+	isError |= !AttachShader(frameBufferProgram, GL_VERTEX_SHADER, loader::ReadFile(vertexShaderDirectory).c_str());
+	isError |= !AttachShader(frameBufferProgram, GL_FRAGMENT_SHADER, loader::ReadFile(pixelFrameBufferDirectory).c_str());
+	if (isError)
+		return -1;
 	
 	float rectVertices[] = {
 		 1.0f, -1.0f,  1.0f, 0.0f,
@@ -334,7 +330,8 @@ int main(int argc, char* argv[])
 
 	GLenum FBOStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (FBOStatus != GL_FRAMEBUFFER_COMPLETE) {
-		std::cout << "FrameBuffer Error: " << std::endl << FBOStatus << std::endl;
+		fprintf(stderr, "FrameBuffer Error: \n%i\n", FBOStatus);
+		return -1;
 	}
 
 	glLinkProgram(shaderProgram);
@@ -343,8 +340,8 @@ int main(int argc, char* argv[])
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetProgramInfoLog(shaderProgram, 1024, NULL, msg);
-		std::cout << "Shader Link Error: " << std::endl << msg << std::endl;
-		return 0;
+		fprintf(stderr, "Shader Link Error: \n%s\n", msg);
+		return -1;
 	}
 
 	glLinkProgram(frameBufferProgram);
@@ -352,8 +349,8 @@ int main(int argc, char* argv[])
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetProgramInfoLog(frameBufferProgram, 1024, NULL, msg);
-		std::cout << "FrameBuffer Link Error: " << std::endl << msg << std::endl;
-		return 0;
+		fprintf(stderr, "FrameBuffer Link Error: \n%s\n", msg);
+		return -1;
 	}
 
 	glViewport(0, 0, width, height);

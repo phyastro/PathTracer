@@ -54,6 +54,9 @@ bool loader::load() {
 		return false;
 	}
 	std::cout << (int)num << std::endl;
+	//int n = 0;
+	//sscanf_s(sceneContents.c_str(), "%i", &n);
+	//std::cout << n << std::endl;
 
 	return true;
 }
