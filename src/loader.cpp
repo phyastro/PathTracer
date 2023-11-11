@@ -17,23 +17,25 @@ const std::string loader::ReadFile(std::string FileName) {
 	return FileData;
 }
 
-bool loader::load() {
-	std::string sceneDirectory = findCurrentDir();
-	sceneDirectory.append("test.scene");
-	std::string sceneContents = ReadFile(sceneDirectory);
-
+int loader::parser::StrToInt(std::string buffer) {
 	std::vector<int> numDigits;
 	bool numIsNeg = false;
-	for (int i = 0; i < sceneContents.length(); i++) {
-		int charID = (int)sceneContents.at(i);
+	for (int i = 0; i < buffer.length(); i++) {
+		int charID = (int)buffer.at(i);
 		if (charID == std::clamp(charID, 48, 57)) {
 			numDigits.push_back(charID - 48);
 		} else {
 			if (charID == 45) {
 				numIsNeg = true;
 			} else {
-				if (charID != 43) {
-					break;
+				try {
+					if (charID != 43) {
+						throw std::invalid_argument("Exception: Invalid Integer");
+					}
+				}
+				catch (std::invalid_argument error) {
+					std::cout << error.what() << std::endl;
+					exit(EXIT_FAILURE);
 				}
 			}
 		}
@@ -45,18 +47,23 @@ bool loader::load() {
 	}
 	if (numIsNeg)
 		num = -num;
-	if (num > INT32_MAX) {
-		fprintf(stderr, "The Given Integer Value Is More Than The Limit %i\n", INT32_MAX);
-		return false;
+	try {
+		if ((num > INT32_MAX) || (num < INT32_MIN)) {
+			throw std::out_of_range("Exception: Integer Out Of Range");
+		}
 	}
-	if (num < INT32_MIN) {
-		fprintf(stderr, "The Given Integer Value Is Less Than The Limit %i\n", INT32_MIN);
-		return false;
+	catch (std::out_of_range error) {
+		std::cout << error.what() << std::endl;
+		exit(EXIT_FAILURE);
 	}
-	std::cout << (int)num << std::endl;
-	//int n = 0;
-	//sscanf_s(sceneContents.c_str(), "%i", &n);
-	//std::cout << n << std::endl;
+	
+	return (int)num;
+}
 
-	return true;
+void loader::load() {
+	std::string sceneDirectory = findCurrentDir();
+	sceneDirectory.append("test.scene");
+	std::string sceneContents = ReadFile(sceneDirectory);
+
+	std::cout << parser::StrToInt(sceneContents) << std::endl;
 }

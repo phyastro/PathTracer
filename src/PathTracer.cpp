@@ -210,7 +210,7 @@ void flipSurface(SDL_Surface* surface)
 	SDL_UnlockSurface(surface);
 }
 
-bool AttachShader(GLuint program, GLenum type, const char* code) {
+void AttachShader(GLuint program, GLenum type, const char* code) {
 	GLuint shader = glCreateShader(type);
 	glShaderSource(shader, 1, &code, NULL);
 	glCompileShader(shader);
@@ -219,20 +219,21 @@ bool AttachShader(GLuint program, GLenum type, const char* code) {
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetShaderInfoLog(shader, 1024, NULL, msg);
-		fprintf(stderr, "Shader Compile Error: \n%s", msg);
-		return false;
+		try {
+			throw std::exception("Shader Compile Error: \n");
+		}
+		catch (std::exception error) {
+			std::cout << error.what() << msg;
+			exit(EXIT_FAILURE);
+		}
 	}
 	glAttachShader(program, shader);
 	glDeleteShader(shader);
-
-	return true;
 }
 
 int main(int argc, char* argv[])
 {
-	if (!loader::load()) {
-		return -1;
-	}
+	loader::load();
 	SDL_Init(SDL_INIT_VIDEO);
 
 	const char* glsl_version = "#version 460";
@@ -284,13 +285,10 @@ int main(int argc, char* argv[])
 	pixelShaderDirectory.append("PixelShader.glsl");
 	pixelFrameBufferDirectory.append("PixelFrameBuffer.glsl");
 
-	bool isError = false;
-	isError |= !AttachShader(shaderProgram, GL_VERTEX_SHADER, loader::ReadFile(vertexShaderDirectory).c_str());
-	isError |= !AttachShader(shaderProgram, GL_FRAGMENT_SHADER, loader::ReadFile(pixelShaderDirectory).c_str());
-	isError |= !AttachShader(frameBufferProgram, GL_VERTEX_SHADER, loader::ReadFile(vertexShaderDirectory).c_str());
-	isError |= !AttachShader(frameBufferProgram, GL_FRAGMENT_SHADER, loader::ReadFile(pixelFrameBufferDirectory).c_str());
-	if (isError)
-		return -1;
+	AttachShader(shaderProgram, GL_VERTEX_SHADER, loader::ReadFile(vertexShaderDirectory).c_str());
+	AttachShader(shaderProgram, GL_FRAGMENT_SHADER, loader::ReadFile(pixelShaderDirectory).c_str());
+	AttachShader(frameBufferProgram, GL_VERTEX_SHADER, loader::ReadFile(vertexShaderDirectory).c_str());
+	AttachShader(frameBufferProgram, GL_FRAGMENT_SHADER, loader::ReadFile(pixelFrameBufferDirectory).c_str());
 	
 	float rectVertices[] = {
 		 1.0f, -1.0f,  1.0f, 0.0f,
@@ -330,8 +328,13 @@ int main(int argc, char* argv[])
 
 	GLenum FBOStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (FBOStatus != GL_FRAMEBUFFER_COMPLETE) {
-		fprintf(stderr, "FrameBuffer Error: \n%i\n", FBOStatus);
-		return -1;
+		try {
+			throw std::exception("FrameBuffer Error: ");
+		}
+		catch (std::exception error) {
+			std::cout << error.what() << FBOStatus << std::endl;
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	glLinkProgram(shaderProgram);
@@ -340,8 +343,13 @@ int main(int argc, char* argv[])
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetProgramInfoLog(shaderProgram, 1024, NULL, msg);
-		fprintf(stderr, "Shader Link Error: \n%s\n", msg);
-		return -1;
+		try {
+			throw std::exception("Shader Link Error: \n");
+		}
+		catch (std::exception error) {
+			std::cout << error.what() << msg << std::endl;
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	glLinkProgram(frameBufferProgram);
@@ -349,8 +357,13 @@ int main(int argc, char* argv[])
 	if (success != GL_TRUE) {
 		char msg[1024];
 		glGetProgramInfoLog(frameBufferProgram, 1024, NULL, msg);
-		fprintf(stderr, "FrameBuffer Link Error: \n%s\n", msg);
-		return -1;
+		try {
+			throw std::exception("FrameBuffer Link Error: \n");
+		}
+		catch (std::exception error) {
+			std::cout << error.what() << msg << std::endl;
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	glViewport(0, 0, width, height);

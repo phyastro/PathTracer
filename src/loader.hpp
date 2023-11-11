@@ -7,5 +7,9 @@ namespace loader
 {
     std::string findCurrentDir();
     const std::string ReadFile(std::string);
-    bool load();
+    namespace parser
+    {
+        int StrToInt(std::string);
+    };
+    void load();
 };
