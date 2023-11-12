@@ -18,46 +18,40 @@ const std::string loader::ReadFile(std::string FileName) {
 }
 
 int loader::parser::StrToInt(std::string buffer) {
-	std::vector<int> numDigits;
-	bool numIsNeg = false;
+	bool isNeg = false;
+	int64_t number = 0;
 	for (int i = 0; i < buffer.length(); i++) {
 		int charID = (int)buffer.at(i);
 		if (charID == std::clamp(charID, 48, 57)) {
-			numDigits.push_back(charID - 48);
+			number = 10 * number + (charID - 48);
+			try {
+				bool isOutOfRange = isNeg ? (-number < INT32_MIN) : (number > INT32_MAX);
+				if (isOutOfRange) {
+					throw std::out_of_range("Exception: Integer Out Of Range");
+				}
+			}
+			catch (std::out_of_range error) {
+				std::cout << error.what() << std::endl;
+				exit(EXIT_FAILURE);
+			}
 		} else {
-			if (charID == 45) {
-				numIsNeg = true;
-			} else {
-				try {
-					if (charID != 43) {
-						throw std::invalid_argument("Exception: Invalid Integer");
-					}
+			try {
+				if ((i == 0) && ((charID == 45) || (charID == 43))) {
+					if (charID == 45)
+						isNeg = true;
+				} else {
+					throw std::invalid_argument("Exception: Invalid Integer");
 				}
-				catch (std::invalid_argument error) {
-					std::cout << error.what() << std::endl;
-					exit(EXIT_FAILURE);
-				}
+			}
+			catch (std::invalid_argument error) {
+				std::cout << error.what() << std::endl;
+				exit(EXIT_FAILURE);
 			}
 		}
 	}
+	number = isNeg ? -number : number;
 
-	int64_t num = 0;
-	for (int i = 0; i < numDigits.size(); i++) {
-		num += numDigits.at(i) * (int64_t)pow(10, (int64_t)numDigits.size() - i - 1);
-	}
-	if (numIsNeg)
-		num = -num;
-	try {
-		if ((num > INT32_MAX) || (num < INT32_MIN)) {
-			throw std::out_of_range("Exception: Integer Out Of Range");
-		}
-	}
-	catch (std::out_of_range error) {
-		std::cout << error.what() << std::endl;
-		exit(EXIT_FAILURE);
-	}
-	
-	return (int)num;
+	return (int)number;
 }
 
 void loader::load() {
