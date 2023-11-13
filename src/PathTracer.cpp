@@ -51,9 +51,11 @@ struct material {
 struct camera {
 	glm::vec3 pos;
 	glm::vec2 angle;
-	float exposure;
+	int ISO;
 	float size;
-	float aperture;
+	float apertureSize;
+	float apertureDist;
+	float lensRadius;
 	float lensFocalLength;
 	float lensThickness;
 	float lensDistance;
@@ -63,11 +65,13 @@ void world1(camera& Camera, std::vector<sphere>& spheres, std::vector<plane>& pl
 	// Camera
 	Camera.pos = glm::vec3(6.332f, 3.855f, 3.140f);
 	Camera.angle = glm::vec2(225.093f, -31.512f);
-	Camera.exposure = 1.0f;
-	Camera.size = 0.058f;
-	Camera.aperture = 0.0015f;
-	Camera.lensFocalLength = 0.0255f;
-	Camera.lensThickness = 0.0010f;
+	Camera.ISO = 4000;
+	Camera.size = 0.044f;
+	Camera.apertureSize = 0.0015f;
+	Camera.apertureDist = 0.038f;
+	Camera.lensRadius = 0.0215f;
+	Camera.lensFocalLength = 0.0425f;
+	Camera.lensThickness = 0.0030f;
 	Camera.lensDistance = 0.050f;
 
 	// Spheres
@@ -93,7 +97,7 @@ void world1(camera& Camera, std::vector<sphere>& spheres, std::vector<plane>& pl
 	// Materials
 	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
-	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 0.5f } };
+	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 50.0f } };
 	materials.push_back(material1);
 	materials.push_back(material2);
 	materials.push_back(material3);
@@ -446,14 +450,18 @@ int main(int argc, char* argv[])
 
 			if (ImGui::CollapsingHeader("Camera")) {
 				isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
-				isReset |= ImGui::DragFloat("Exposure", &Camera.exposure, 0.01f, 0.01f, 20.0f, "%0.2f");
+				isReset |= ImGui::DragInt("ISO", &Camera.ISO, 50, 50, 819200);
 				isReset |= ImGui::DragFloat("Camera Size", &Camera.size, 0.001f, 0.001f, 5.0f, "%0.3f");
-				isReset |= ImGui::DragFloat("Aperture Size", &Camera.aperture, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Aperture Size", &Camera.apertureSize, 0.0001f, 0.0001f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Aperture Dist", &Camera.apertureDist, 0.001f, 0.001f, Camera.lensDistance, "%0.3f");
+				float fov = 2.0f * glm::degrees(::atan(0.5f * Camera.size / Camera.apertureDist));
+				ImGui::Text("FOV: %0.0f", fov);
+				ImGui::Separator();
+				ImGui::Text("Lens");
+				isReset |= ImGui::DragFloat("Radius", &Camera.lensRadius, 0.0005f, 0.0005f, 10.0f, "%0.4f");
 				isReset |= ImGui::DragFloat("Focal Length", &Camera.lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
 				isReset |= ImGui::DragFloat("Thickness", &Camera.lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
-				isReset |= ImGui::DragFloat("Lens Distance", &Camera.lensDistance, 0.001f, 0.001f, 100.0f, "%0.3f");
-				float fov = 2.0f * glm::degrees(::atan(0.5f * Camera.size / Camera.lensDistance));
-				ImGui::Text("FOV: %0.0f", fov);
+				isReset |= ImGui::DragFloat("Distance", &Camera.lensDistance, 0.001f, 0.001f, 100.0f, "%0.3f");
 			}
 			ImGui::Separator();
 
@@ -605,9 +613,11 @@ int main(int argc, char* argv[])
 			glUniform2f(glGetUniformLocation(shaderProgram, "cameraAngle"), -Camera.angle.y, Camera.angle.x);
 			glUniform3f(glGetUniformLocation(shaderProgram, "cameraPos"), Camera.pos.x, Camera.pos.y, Camera.pos.z);
 			glUniform1f(glGetUniformLocation(shaderProgram, "persistance"), persistance);
-			glUniform1f(glGetUniformLocation(shaderProgram, "exposure"), Camera.exposure);
+			glUniform1i(glGetUniformLocation(shaderProgram, "ISO"), Camera.ISO);
 			glUniform1f(glGetUniformLocation(shaderProgram, "cameraSize"), Camera.size);
-			glUniform4f(glGetUniformLocation(shaderProgram, "lensData"), Camera.aperture * 0.5f, Camera.lensFocalLength, Camera.lensThickness, Camera.lensDistance);
+			glUniform1f(glGetUniformLocation(shaderProgram, "apertureSize"),  Camera.apertureSize);
+			glUniform1f(glGetUniformLocation(shaderProgram, "apertureDist"),  Camera.apertureDist);
+			glUniform4f(glGetUniformLocation(shaderProgram, "lensData"), Camera.lensRadius, Camera.lensFocalLength, Camera.lensThickness, Camera.lensDistance);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
 			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);

@@ -10,8 +10,10 @@ uniform float FPS;
 uniform vec2 cameraAngle;
 uniform vec3 cameraPos;
 uniform float persistance;
-uniform float exposure;
+uniform int ISO;
 uniform float cameraSize;
+uniform float apertureSize;
+uniform float apertureDist;
 uniform vec4 lensData;
 uniform int samplesPerFrame;
 uniform int pathLength;
@@ -491,11 +493,22 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 		material mat;
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 		// Calculate The Refractive Index
-		float index = RefractiveIndexBK7Glass(l);
-		index = (isOutside == 1) ? (1.0 / index) : index;
+		float n1 = 1.0;
+		float n2 = 1.0;
+		if (isOutside == 1) {
+			n1 = 1.0;
+			n2 = RefractiveIndexBK7Glass(l);
+		} else {
+			n1 = RefractiveIndexBK7Glass(l);
+			n2 = 1.0;
+		}
+		float n12 = n1 / n2;
+		// Wavelength Changes As Refractive Index Changes
+		// lambda = lamda_0 / n
+		l = l * n12;
 		// Calculate The Next Ray's Origin And Direction
 		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
-		ray.dir = refract(ray.dir, normal, index);
+		ray.dir = refract(ray.dir, normal, n12);
 	}
 }
 
@@ -503,18 +516,26 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	uint seed = GenerateSeed(xy, k);
 	// SSAA
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
-	uv *= -cameraSize * 0.5;
 
+	// This Is A Simple Camera Made Up Of A BiConvex Lens And An Aperture
+	// Basically Ray Originates From The Pixel Of Camera Sensor \
+	// Then Passes Through The Area Of Aperture
+	// Then It Will Pass Through A BiConvex Lens
 	Ray ray;
 	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
+	uv *= -cameraSize * 0.5;
+	// Position Of Each Pixel On Sensor As Ray Origin
 	ray.origin = cameraPos + (vec3(uv, 0.0) * matrix);
-	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
-	vec3 pointOnDisk = cameraPos + (vec3(lensData.x * SampleUniformUnitDisk(seed), lensData.w) * matrix);
-	ray.dir = normalize(pointOnDisk - ray.origin);
+	// Generates Random Point On Aperture
+	vec3 pointOnAperture = cameraPos + (vec3(0.5 * apertureSize * SampleUniformUnitDisk(seed), apertureDist) * matrix);
+	// Compute Random Direction Which Passes Through The Area Of Aperture From Camera Sensor
+	ray.dir = normalize(pointOnAperture - ray.origin);
 
 	vec3 color = vec3(0.0);
 
 	float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
+	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
+	// Ray Passes Through The Lens Here
 	TracePathLens(l, ray, forwardDir);
 	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InvSpectraPDF(390.0, 720.0);
 
@@ -547,7 +568,8 @@ void main() {
 	for (uint i = 0; i < samplesPerFrame; i++) {
 		color += Scene(xy, uv, i);
 	}
-	color *= exposure;
+	// Simulate Exposure Variance Depending On Aperture Size And ISO
+	color *= apertureSize * apertureSize * ISO;
 	Accumulate(color);
 
 	Fragcolor = vec4(color, 1.0);
