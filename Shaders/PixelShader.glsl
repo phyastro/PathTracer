@@ -318,15 +318,6 @@ void PCG32(inout uint seed) {
 	seed = (word >> 22u) ^ word;
 }
 
-/*
-void LCG(inout uint seed) {
-	// LCG PRNG Test
-	// Produces Significant Artifacts Especially On The Light Sources And 3ms Slower(250FPS->100FPS)
-	// Therefore, This Method Can Get Discarded
-	seed = uint(mod(double(seed) * 983478477u, 0xFFFFFFFFu));
-}
-*/
-
 float RandomFloat(inout uint seed) {
 	PCG32(seed);
 	return float(seed) / 0xFFFFFFFFu;
@@ -477,7 +468,7 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
 }
 
 void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
-	// Trace The Path Through The Convex Lens
+	// Trace The Path Through The BiConvex Lens
 	lens object;
 	object.radius = lensData.x;
 	object.focalLength = lensData.y;
@@ -518,7 +509,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
 
 	// This Is A Simple Camera Made Up Of A BiConvex Lens And An Aperture
-	// Basically Ray Originates From The Pixel Of Camera Sensor \
+	// Ray Originates From The Pixel Of Camera Sensor
 	// Then Passes Through The Area Of Aperture
 	// Then It Will Pass Through A BiConvex Lens
 	Ray ray;
