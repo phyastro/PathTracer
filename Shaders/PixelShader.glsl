@@ -367,10 +367,17 @@ vec3 SampleUniformUnitSphere(inout uint seed){
 	return vec3(x, y, z);
 }
 
-vec3 SampleCosineDirectionHemisphere(inout uint seed, in vec3 normal){
+vec3 SampleCosineDirectionHemisphere(in vec3 normal, inout uint seed){
 	// Generate Cosine Distributed Random Vectors Within Normals Hemisphere
 	vec3 sumvector = normal + SampleUniformUnitSphere(seed);
 	return normalize(sumvector);
+}
+
+float CosineDirectionPDF(in float costheta) {
+	// Idea: Integrating Over Cosine PDF Must Give 1
+    // Solution: Divide Cosine By Pi
+    // Note: Integrating Equation Is Solid Angle. Must Insert PDF Inside Integrals To Normalize
+	return costheta / PI;
 }
 
 float SpectralPowerDistribution(in float l, in float l_peak, in float d, in int invert) {
@@ -418,20 +425,46 @@ float RefractiveIndexBK7Glass(in float l) {
 	return sqrt(n2);
 }
 
-float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint seed, out bool isTerminate) {
+float EvaluateBRDF(in float l, in vec3 inDir, in vec3 outDir, in vec3 normal, in material mat) {
+	// Evaluate The BRDF
+	// Lambertian BRDF For Diffuse Surface
+	float diffuse = SpectralPowerDistribution(l, mat.reflection.x, mat.reflection.y, int(mat.reflection.z)) / PI;
+	return diffuse;
+}
+
+vec3 SampleBRDF(in vec3 inDir, in vec3 normal, inout uint seed) {
+	// Sample Directions Of BRDF
+	vec3 outDir = SampleCosineDirectionHemisphere(normal, seed);
+	return outDir;
+}
+
+float BRDFPDF(in vec3 outDir, in vec3 normal) {
+	// PDF For Sampling Directions Of BRDF
+	return CosineDirectionPDF(dot(outDir, normal));
+}
+
+float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint seed, out bool isTerminate) {
 	// Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
 	float radiance = 0.0;
 	vec3 normal = vec3(0.0);
 	material mat;
-	float hitdist = Intersection(ray, normal, mat);
+	float hitdist = Intersection(inRay, normal, mat);
+	Ray outRay = inRay;
 	if (hitdist < MAXDIST) {
+		// Calculate The Next Ray's Origin And Direction
+		outRay.origin = fma(inRay.dir, vec3(hitdist), inRay.origin);
+		outRay.dir = SampleBRDF(inRay.dir, normal, seed);
+		float BRDFpdf = BRDFPDF(outRay.dir, normal);
+		// If The Ray Hits The Light Source
 		if (mat.emission.y > 0.0) {
 			radiance = fma(Emit(l, mat), rayradiance, radiance);
 			// Terminate The Path If The Ray Hits The Light Source
 			isTerminate = true;
 			return radiance;
 		}
-		rayradiance *= SpectralPowerDistribution(l, mat.reflection.x, mat.reflection.y, int(mat.reflection.z));
+		// Evaluate The BRDF
+		float costheta = dot(outRay.dir, normal);
+		rayradiance *= EvaluateBRDF(l, inRay.dir, outRay.dir, normal, mat) * costheta / BRDFpdf;
 		// Russian Roulette
 		// Probability Of The Ray Can Be Anything From 0 To 1
 		float rayProbability = clamp(rayradiance, 0.0, 0.99);
@@ -442,9 +475,7 @@ float TraceRay(in float l, inout float rayradiance, inout Ray ray, inout uint se
 		}
 		// Add Energy Which Was Lost By Terminating Rays
 		rayradiance *= 1.0 / rayProbability;
-		// Calculate The Next Ray's Origin And Direction
-		ray.origin = fma(ray.dir, vec3(hitdist), ray.origin);
-		ray.dir = SampleCosineDirectionHemisphere(seed, normal);
+		inRay = outRay;
 	}
 	else {
 		isTerminate = true;
