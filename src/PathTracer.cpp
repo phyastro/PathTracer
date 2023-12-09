@@ -65,13 +65,13 @@ void world1(camera& Camera, std::vector<sphere>& spheres, std::vector<plane>& pl
 	// Camera
 	Camera.pos = glm::vec3(6.332f, 3.855f, 3.140f);
 	Camera.angle = glm::vec2(225.093f, -31.512f);
-	Camera.ISO = 4000;
-	Camera.size = 0.044f;
-	Camera.apertureSize = 0.0015f;
-	Camera.apertureDist = 0.038f;
-	Camera.lensRadius = 0.0215f;
-	Camera.lensFocalLength = 0.0425f;
-	Camera.lensThickness = 0.0030f;
+	Camera.ISO = 1600;
+	Camera.size = 0.057f;
+	Camera.apertureSize = 0.0025f;
+	Camera.apertureDist = 0.049f;
+	Camera.lensRadius = 0.0100f;
+	Camera.lensFocalLength = 0.0300f;
+	Camera.lensThickness = 0.0000f;
 	Camera.lensDistance = 0.050f;
 
 	// Spheres

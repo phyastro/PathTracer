@@ -542,7 +542,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	// This Is A Simple Camera Made Up Of A BiConvex Lens And An Aperture
 	// Ray Originates From The Pixel Of Camera Sensor
 	// Then Passes Through The Area Of Aperture
-	// Then It Will Pass Through A BiConvex Lens
+	// Then It Passes Through A BiConvex Lens
 	Ray ray;
 	mat3 matrix = RotationMatrix(vec3(cameraAngle, 0.0));
 	uv *= -cameraSize * 0.5;
