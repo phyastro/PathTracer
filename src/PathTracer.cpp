@@ -138,7 +138,8 @@ float Reinhard(float x) {
 	return x / (1.0f + x);
 }
 
-float ACESFitted(float x) {
+// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+float ACESFilm(float x) {
 	// x(ax + b) / (x(cx + d) + e)
 	float a = 2.51f;
 	float b = 0.03f;
@@ -159,7 +160,7 @@ float tonemapping(float x, int tonemap) {
 		x = Reinhard(x);
 	}
 	if (tonemap == 2) {
-		x = ACESFitted(x);
+		x = ACESFilm(x);
 	}
 	if (tonemap == 3) {
 		x = DEUCESBioPhotometric(x);
@@ -491,7 +492,7 @@ int main(int argc, char* argv[])
 					ImGui::TableHeadersRow();
 					ItemsTable("None", tonemap, 0, 1);
 					ItemsTable("Reinhard", tonemap, 1, 1);
-					ItemsTable("ACES Fitted", tonemap, 2, 1);
+					ItemsTable("ACES Film", tonemap, 2, 1);
 					ItemsTable("DEUCES", tonemap, 3, 1);
 					ImGui::EndTable();
 				}

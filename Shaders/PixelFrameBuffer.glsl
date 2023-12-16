@@ -25,7 +25,8 @@ vec3 Reinhard(vec3 x) {
 	return x / (1.0 + x);
 }
 
-vec3 ACESFitted(vec3 x) {
+// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+vec3 ACESFilm(vec3 x) {
 	// x(ax + b) / (x(cx + d) + e)
 	float a = 2.51;
 	float b = 0.03;
@@ -48,7 +49,7 @@ void main() {
 	if (tonemap == 1)
 		color = Reinhard(color);
 	if (tonemap == 2)
-		color = ACESFitted(color);
+		color = ACESFilm(color);
 	if (tonemap == 3)
 		color = DEUCESBioPhotometric(color);
 	color = Gamma(color, 2.2);
