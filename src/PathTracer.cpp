@@ -14,7 +14,7 @@
 const int NUMSAMPLES = 10000;
 const int NUMSAMPLESPERFRAME = 5;
 const int PATHLENGTH = 10000;
-#define TONEMAP 0 // 0 is None And 1 is DEUCES
+#define TONEMAP 0 // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 
 struct sphere {
 	float pos[3];
@@ -429,7 +429,7 @@ int main(int argc, char* argv[])
 	int frame = samplesPerFrame;
 	int samples = samplesPerFrame;
 	int prevSamples = samplesPerFrame;
-	int tonemap = 0;
+	int tonemap = TONEMAP;
 	bool isBeginning = true;
 #ifndef OFFLINE_RENDER
 	glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
