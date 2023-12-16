@@ -3,8 +3,8 @@
 layout(location = 0) out vec4 FragColor;
 
 uniform ivec2 resolution;
-uniform int frame;
 uniform int samples;
+uniform int tonemap;
 uniform sampler2D screenTexture;
 
 // http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
@@ -15,19 +15,42 @@ vec3 XYZToRGB(vec3 XYZ){
 }
 
 vec3 Gamma(vec3 x, float y) {
-	// Gamma Function (x^(1/y))
+	// Gamma Function x^(1/y)
 	x = clamp(x, 0.0, 1.0);
 	return pow(x, 1.0 / vec3(y));
 }
 
-// Biophotometric Tonemapping by Ted
-vec3 BioPhotometricTonemapping(vec3 x) {
-	return exp(-1.0 / x);
+vec3 Reinhard(vec3 x) {
+	// x / (1 + x)
+	return x / (1.0 + x);
+}
+
+vec3 ACESFitted(vec3 x) {
+	// x(ax + b) / (x(cx + d) + e)
+	float a = 2.51;
+	float b = 0.03;
+	float c = 2.43;
+	float d = 0.59;
+	float e = 0.14;
+	return x * (a * x + b) / (x * (c * x + d) + e);
+}
+
+// DEUCES Biophotometric Tonemap by Ted(Kerdek)
+vec3 DEUCESBioPhotometric(vec3 x) {
+	// e^(-0.25 / x)
+	return exp(-0.25 / x);
 }
 
 void main() {
 	vec3 color = vec3(0.0);
 	color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz / ((samples > 0) ? samples : 1);
-	color = Gamma(BioPhotometricTonemapping(max(XYZToRGB(color), 0.0)), 2.2);
+	color = max(XYZToRGB(color), 0.0);
+	if (tonemap == 1)
+		color = Reinhard(color);
+	if (tonemap == 2)
+		color = ACESFitted(color);
+	if (tonemap == 3)
+		color = DEUCESBioPhotometric(color);
+	color = Gamma(color, 2.2);
 	FragColor = vec4(color, 1.0);
 }

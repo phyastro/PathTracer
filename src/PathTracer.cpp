@@ -14,6 +14,7 @@
 const int NUMSAMPLES = 10000;
 const int NUMSAMPLESPERFRAME = 5;
 const int PATHLENGTH = 10000;
+#define TONEMAP 0 // 0 is None And 1 is DEUCES
 
 struct sphere {
 	float pos[3];
@@ -97,7 +98,7 @@ void world1(camera& Camera, std::vector<sphere>& spheres, std::vector<plane>& pl
 	// Materials
 	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
-	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 50.0f } };
+	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 12.5f } };
 	materials.push_back(material1);
 	materials.push_back(material2);
 	materials.push_back(material3);
@@ -130,6 +131,40 @@ float BlackBodyRadiation(float l, float T) {
 float BlackBodyRadiationPeak(float T) {
 	// Derived By Substituting Wien's Displacement Law On Plank's Law
 	return 4.0956746759e-6f * pow(T, 5.0f);
+}
+
+float Reinhard(float x) {
+	// x / (1 + x)
+	return x / (1.0f + x);
+}
+
+float ACESFitted(float x) {
+	// x(ax + b) / (x(cx + d) + e)
+	float a = 2.51f;
+	float b = 0.03f;
+	float c = 2.43f;
+	float d = 0.59f;
+	float e = 0.14f;
+	return x * (a * x + b) / (x * (c * x + d) + e);
+}
+
+// DEUCES Biophotometric Tonemap by Ted(Kerdek)
+float DEUCESBioPhotometric(float x) {
+	// e^(-0.25 / x)
+	return exp(-0.25f / x);
+}
+
+float tonemapping(float x, int tonemap) {
+	if (tonemap == 1) {
+		x = Reinhard(x);
+	}
+	if (tonemap == 2) {
+		x = ACESFitted(x);
+	}
+	if (tonemap == 3) {
+		x = DEUCESBioPhotometric(x);
+	}
+	return x;
 }
 
 void ItemsTable(const char* name, int& selection, int id, int size) {
@@ -393,6 +428,7 @@ int main(int argc, char* argv[])
 	int frame = samplesPerFrame;
 	int samples = samplesPerFrame;
 	int prevSamples = samplesPerFrame;
+	int tonemap = 0;
 	bool isBeginning = true;
 #ifndef OFFLINE_RENDER
 	glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
@@ -400,6 +436,7 @@ int main(int argc, char* argv[])
 	bool isWindowFocused = false;
 	std::vector <float> frames;
 	std::vector <float> spectra;
+	std::vector <float> tonemapgraph;
 #endif
 	std::vector <sphere> spheres;
 	sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
@@ -447,6 +484,24 @@ int main(int argc, char* argv[])
 			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 0, 100);
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
 			ImGui::Separator();
+
+			if (ImGui::CollapsingHeader("Post Processing")) {
+				if (ImGui::BeginTable("Tonemap Table", 1)) {
+					ImGui::TableSetupColumn("Tonemap");
+					ImGui::TableHeadersRow();
+					ItemsTable("None", tonemap, 0, 1);
+					ItemsTable("Reinhard", tonemap, 1, 1);
+					ItemsTable("ACES Fitted", tonemap, 2, 1);
+					ItemsTable("DEUCES", tonemap, 3, 1);
+					ImGui::EndTable();
+				}
+				tonemapgraph.clear();
+				for (int i = 1; i < 101; i++) {
+					float x = 0.01f * (float)i;
+					tonemapgraph.push_back(tonemapping(x, tonemap));
+				}
+				ImGui::PlotLines("", tonemapgraph.data(), (int)tonemapgraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+			}
 
 			if (ImGui::CollapsingHeader("Camera")) {
 				isReset |= ImGui::DragFloat("Persistance", &persistance, 0.00025f, 0.00025f, 1.0f, "%0.5f");
@@ -678,8 +733,8 @@ int main(int argc, char* argv[])
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glUseProgram(frameBufferProgram);
-		glUniform1i(glGetUniformLocation(frameBufferProgram, "frame"), frame);
 		glUniform1i(glGetUniformLocation(frameBufferProgram, "samples"), samples);
+		glUniform1i(glGetUniformLocation(frameBufferProgram, "tonemap"), tonemap);
 		if (isWinSizeChanged || isBeginning) {
 			glUniform2i(glGetUniformLocation(frameBufferProgram, "resolution"), width, height);
 		}
