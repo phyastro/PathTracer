@@ -10,6 +10,8 @@
 #include "spectrum.hpp"
 #include "loader.hpp"
 
+#include <vector>
+
 //#define OFFLINE_RENDER
 const int NUMSAMPLES = 10000;
 const int NUMSAMPLESPERFRAME = 5;
@@ -260,10 +262,10 @@ void AttachShader(GLuint program, GLenum type, const char* code) {
 		char msg[1024];
 		glGetShaderInfoLog(shader, 1024, NULL, msg);
 		try {
-			throw std::exception("Shader Compile Error: \n");
+			throw std::exception();
 		}
 		catch (std::exception error) {
-			std::cout << error.what() << msg;
+			std::cout << "Shader Compile Error: \n" << msg;
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -369,10 +371,10 @@ int main(int argc, char* argv[])
 	GLenum FBOStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (FBOStatus != GL_FRAMEBUFFER_COMPLETE) {
 		try {
-			throw std::exception("FrameBuffer Error: ");
+			throw std::exception();
 		}
 		catch (std::exception error) {
-			std::cout << error.what() << FBOStatus << std::endl;
+			std::cout << "FrameBuffer Error: " << FBOStatus << std::endl;
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -384,10 +386,10 @@ int main(int argc, char* argv[])
 		char msg[1024];
 		glGetProgramInfoLog(shaderProgram, 1024, NULL, msg);
 		try {
-			throw std::exception("Shader Link Error: \n");
+			throw std::exception();
 		}
 		catch (std::exception error) {
-			std::cout << error.what() << msg << std::endl;
+			std::cout << "Shader Link Error: \n" << msg << std::endl;
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -398,10 +400,10 @@ int main(int argc, char* argv[])
 		char msg[1024];
 		glGetProgramInfoLog(frameBufferProgram, 1024, NULL, msg);
 		try {
-			throw std::exception("FrameBuffer Link Error: \n");
+			throw std::exception();
 		}
 		catch (std::exception error) {
-			std::cout << error.what() << msg << std::endl;
+			std::cout << "FrameBuffer Link Error: \n" << msg << std::endl;
 			exit(EXIT_FAILURE);
 		}
 	}

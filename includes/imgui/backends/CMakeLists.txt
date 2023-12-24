@@ -5,3 +5,4 @@ add_library(imgui_backends
 )
 
 target_include_directories(imgui_backends PUBLIC ${SDL2_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/includes/imgui)
+target_link_libraries(imgui_backends PUBLIC ${SDL2_LIBRARIES})
