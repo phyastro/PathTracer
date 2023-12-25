@@ -262,6 +262,120 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 	}
 }
 
+struct complex{
+    float real;
+    float imaginary;
+};
+
+complex add(in complex z, in float c) {
+    return complex(z.real + c, z.imaginary);
+}
+
+complex add(in complex z1, in complex z2) {
+    return complex(z1.real + z2.real, z1.imaginary + z2.imaginary);
+}
+
+complex invert(in complex z) {
+    return complex(-z.real, -z.imaginary);
+}
+
+complex multiply(in complex z, in float c) {
+    return complex(z.real * c, z.imaginary * c);
+}
+
+complex multiply(in complex z1, in complex z2) {
+    return complex(z1.real * z2.real - z1.imaginary * z2.imaginary, z1.real * z2.imaginary + z1.imaginary * z2.real);
+}
+
+complex divide(in complex z, in float c) {
+    return complex(z.real / c, z.imaginary / c);
+}
+
+complex divide(in complex z1, in complex z2) {
+    return complex((z1.real * z2.real + z1.imaginary * z2.imaginary) / (z2.real * z2.real + z2.imaginary * z2.imaginary), (z1.imaginary * z2.real - z1.real * z2.imaginary) / (z2.real * z2.real + z2.imaginary * z2.imaginary));
+}
+
+float modulus(in complex z) {
+    return sqrt(z.real * z.real + z.imaginary * z.imaginary);
+}
+
+complex pow(in complex z, in float n) {
+    // Convert Cartesian Form Into Polar Form
+    float r = modulus(z);
+    float theta_real = acos(z.real / r);
+    float theta_imaginary = theta_real;
+    if ((sign(z.imaginary)) < 0.0) {
+        theta_imaginary = asin(z.imaginary / r);
+    }
+
+    // De Moivre's Theorem
+    complex new_z = complex(cos(n * theta_real) * pow(r, n), sin(n * theta_imaginary) * pow(r, n));
+    if ((new_z.real < 1e-6) && (new_z.real > -1e-6)) {
+        new_z.real = 0.0;
+    }
+    if ((new_z.imaginary < 1e-6) && (new_z.imaginary > -1e-6)) {
+        new_z.imaginary = 0.0;
+    }
+
+    return new_z;
+}
+
+void solveQuadratic(in float a, in complex b, in complex c, inout complex r1, inout complex r2) {
+    complex sqrtdiscriminant = pow(add(multiply(b, b),invert(multiply(c, 4.0 * a))), 0.5);
+    r1 = divide(add(invert(sqrtdiscriminant), invert(b)), 2.0 * a);
+    r2 = divide(add(sqrtdiscriminant, invert(b)), 2.0 * a);
+}
+
+void solveCubic(in float a, in float b, in float c, in float d, inout complex r1, inout complex r2, inout complex r3) {
+    float D0 = b * b - 3.0 * a * c;
+    float D1 = 2.0 * b * b * b - 9.0 * a * b * c + 27.0 * a * a * d;
+    complex C = pow(divide(add(pow(complex(D1 * D1 - 4.0 * D0 * D0 * D0, 0.0), 0.5), D1), 2.0), 1.0 / 3.0);
+
+    complex e1 = complex(-0.5, 0.5 * sqrt(3.0));
+    complex e2 = complex(-0.5, -0.5 * sqrt(3.0));
+    complex e1C = multiply(e1, C);
+    complex e2C = multiply(e2, C);
+    r1 = invert(divide(add(add(divide(complex(D0, 0.0), C), C), b), 3.0 * a));
+    r2 = invert(divide(add(add(divide(complex(D0, 0.0), e1C), e1C), b), 3.0 * a));
+    r3 = invert(divide(add(add(divide(complex(D0, 0.0), e2C), e2C), b), 3.0 * a));
+
+    if ((r1.imaginary < 1e-6) && (r1.imaginary > -1e-6)) {
+        r1.imaginary = 0.0;
+    }
+    if ((r2.imaginary < 1e-6) && (r2.imaginary > -1e-6)) {
+        r2.imaginary = 0.0;
+    }
+    if ((r3.imaginary < 1e-6) && (r3.imaginary > -1e-6)) {
+        r3.imaginary = 0.0;
+    }
+}
+
+void solveQuartic(in float a1, in float a2, in float a3, in float a4, in float a5, inout complex a, inout complex b, inout complex c, inout complex d) {
+	float alpha = a2 / a1;
+	float beta = a3 / a1;
+	float gamma = a4 / a1;
+	float delta = a5 / a1;
+
+    complex r1 = complex(0.0, 0.0);
+    complex r2 = complex(0.0, 0.0);
+    complex r3 = complex(0.0, 0.0);
+    solveCubic(1.0, -beta, alpha * gamma - 4.0 * delta, -(alpha * alpha * delta - 4.0 * beta * delta + gamma * gamma), r1, r2, r3);
+
+    complex r11 = complex(0.0, 0.0);
+    complex r12 = complex(0.0, 0.0);
+    complex r21 = complex(0.0, 0.0);
+    complex r22 = complex(0.0, 0.0);
+    complex r31 = complex(0.0, 0.0);
+    complex r32 = complex(0.0, 0.0);
+    solveQuadratic(1.0, invert(r1), complex(delta, 0.0), r31, r32);
+    solveQuadratic(1.0, invert(r2), complex(delta, 0.0), r11, r12);
+    solveQuadratic(1.0, invert(r3), complex(delta, 0.0), r21, r22);
+    a = divide(multiply(add(r21, r31), -gamma), add(multiply(add(r32, r22), add(add(r21, r31), r12)), multiply(r12, add(r21, r31))));
+    b = divide(r11, a);
+    c = divide(r21, a);
+    d = divide(r31, a);
+}
+
 float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 	// Finds The Ray-Intersection Of Every Object In The Scene
 	float hitdist = 1e6;
