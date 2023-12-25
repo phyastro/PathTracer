@@ -350,11 +350,11 @@ void solveCubic(in float a, in float b, in float c, in float d, inout complex r1
     }
 }
 
-void solveQuartic(in float a1, in float a2, in float a3, in float a4, in float a5, inout complex a, inout complex b, inout complex c, inout complex d) {
-	float alpha = a2 / a1;
-	float beta = a3 / a1;
-	float gamma = a4 / a1;
-	float delta = a5 / a1;
+void solveQuartic(in float a4, in float a3, in float a2, in float a1, in float a0, inout complex a, inout complex b, inout complex c, inout complex d) {
+	float alpha = a3 / a4;
+	float beta = a2 / a4;
+	float gamma = a1 / a4;
+	float delta = a0 / a4;
 
     complex r1 = complex(0.0, 0.0);
     complex r2 = complex(0.0, 0.0);
