@@ -302,14 +302,10 @@ float modulus(in complex z) {
 complex pow(in complex z, in float n) {
     // Convert Cartesian Form Into Polar Form
     float r = modulus(z);
-    float theta_real = acos(z.real / r);
-    float theta_imaginary = theta_real;
-    if ((sign(z.imaginary)) < 0.0) {
-        theta_imaginary = asin(z.imaginary / r);
-    }
+	float theta = atan(z.imaginary, z.real);
 
     // De Moivre's Theorem
-    complex new_z = complex(cos(n * theta_real) * pow(r, n), sin(n * theta_imaginary) * pow(r, n));
+    complex new_z = complex(cos(n * theta) * pow(r, n), sin(n * theta) * pow(r, n));
     if ((new_z.real < 1e-6) && (new_z.real > -1e-6)) {
         new_z.real = 0.0;
     }
@@ -321,7 +317,7 @@ complex pow(in complex z, in float n) {
 }
 
 void solveQuadratic(in float a, in complex b, in complex c, inout complex r1, inout complex r2) {
-    complex sqrtdiscriminant = pow(add(multiply(b, b),invert(multiply(c, 4.0 * a))), 0.5);
+    complex sqrtdiscriminant = pow(add(multiply(b, b), invert(multiply(c, 4.0 * a))), 0.5);
     r1 = divide(add(invert(sqrtdiscriminant), invert(b)), 2.0 * a);
     r2 = divide(add(sqrtdiscriminant, invert(b)), 2.0 * a);
 }
@@ -376,6 +372,58 @@ void solveQuartic(in float a4, in float a3, in float a2, in float a1, in float a
     d = divide(r31, a);
 }
 
+bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout material mat) {
+	vec3 o = ray.origin.xzy;
+	vec3 d = ray.dir.xzy;
+	float a4 = dot(vec3(d.x, d.y, 10.0 * d.z), d * d * d) + 2.0 * dot(d.xyz * d.xyz, d.yzx * d.yzx);
+	float a3 = 4.0 * (dot(vec3(o.x, o.y, 10.0 * o.z), d * d * d) + dot(o * d, vec3(dot(d.yz, d.yz), dot(d.xz, d.xz), dot(d.xy, d.xy)))) + 2.0 * d.y * d.y * d.y - 6.0 * d.x * d.x * d.y;
+	float a2 = 6.0 * dot(vec3(o.x, o.y, 10.0 * o.z), o * d * d) + 2.0 * (dot(o.xy * o.xy, d.yx * d.yx) + dot(o.xz * o.xz, d.zx * d.zx) + dot(o.yz * o.yz, d.zy * d.zy)) + 8.0 * dot(o.xxy * d.xxy, o.yzz * d.yzz) + 6.0 * o.y * d.y * d.y - 6.0 * o.y * d.x * d.x - 12.0 * o.x * d.x * d.y - 12.0 * d.z * d.z;
+	float a1 = 4.0 * (dot(vec3(o.x, o.y, 10.0 * o.z) * o * o, d) + dot(o.xx * o.xx, o.yz * d.yz) + dot(o.yy * o.yy, o.xz * d.xz) + dot(o.zz * o.zz, o.xy * d.xy)) + 6.0 * o.y * o.y * d.y - 6.0 * o.x * o.x * d.y - 12.0 * o.x * o.y * d.x - 24.0 * o.z * d.z;
+	float a0 = dot(vec3(o.x, o.y, 10.0 * o.z), o * o * o) + 2.0 * dot(o.xxy * o.xxy, o.yzz * o.yzz) + 2.0 * o.y * o.y * o.y - 6.0 * o.x * o.x * o.y - 12.0 * o.z * o.z + 1.0;
+
+	complex r1 = complex(0.0, 0.0);
+	complex r2 = complex(0.0, 0.0);
+	complex r3 = complex(0.0, 0.0);
+	complex r4 = complex(0.0, 0.0);
+	solveQuartic(a4, a3, a2, a1, a0, r1, r2, r3, r4);
+
+	float t = 1e6;
+	if ((r1.imaginary < 1e-6) && (r1.imaginary > -1e-6)) {
+		if ((r1.real < t) && (r1.real > 0.0)) {
+			t = r1.real;
+		}
+	}
+	if ((r2.imaginary < 1e-6) && (r2.imaginary > -1e-6)) {
+		if ((r2.real < t) && (r2.real > 0.0)) {
+			t = r2.real;
+		}
+	}
+	if ((r3.imaginary < 1e-6) && (r3.imaginary > -1e-6)) {
+		if ((r3.real < t) && (r3.real > 0.0)) {
+			t = r3.real;
+		}
+	}
+	if ((r4.imaginary < 1e-6) && (r4.imaginary > -1e-6)) {
+		if ((r4.real < t) && (r4.real > 0.0)) {
+			t = r4.real;
+		}
+	}
+
+	if (t < hitdist) {
+		hitdist = t;
+		float x = o.x + d.x * t;
+		float y = o.y + d.y * t;
+		float z = o.z + d.z * t;
+		normal.x = 4.0 * x * x * x + 4.0 * x * y * y - 12.0 * x * y + 4.0 * x * z * z;
+		normal.y = 40.0 * z * z * z + 4.0 * x * x * z + 4.0 * y * y * z - 24.0 * z;
+		normal.z = 4.0 * y * y * y + 4.0 * x * x * y - 6.0 * x * x + 6.0 * y * y + 4.0 * y * z * z;
+		normal = normalize(normal);
+		mat = GetMaterial(1);
+	}
+
+	return true;
+}
+
 float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 	// Finds The Ray-Intersection Of Every Object In The Scene
 	float hitdist = 1e6;
@@ -421,6 +469,8 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 	}
 	offset += 11*numObjects[3];
+	ray.origin -= vec3(1.0, 1.0, -7.0);
+	thritorius(ray, hitdist, normal, mat);
 
 	return hitdist;
 }
