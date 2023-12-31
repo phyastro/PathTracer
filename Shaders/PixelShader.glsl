@@ -19,8 +19,8 @@ uniform int samplesPerFrame;
 uniform int pathLength;
 //uniform float CIEXYZ2006[1323];
 uniform int numObjects[];
-uniform float objects[512];
-uniform float materials[512];
+uniform float objects[100];
+uniform float materials[100];
 uniform sampler2D screenTexture;
 
 #define MAXDIST 1e5
