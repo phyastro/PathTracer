@@ -300,6 +300,8 @@ float modulus(in complex z) {
 }
 
 complex pow(in complex z, in float n) {
+	// Power Of Complex Number Calculator, Using De Moivre's Theorem
+
     // Convert Cartesian Form Into Polar Form
     float r = modulus(z);
 	float theta = atan(z.imaginary, z.real);
@@ -317,12 +319,16 @@ complex pow(in complex z, in float n) {
 }
 
 void solveQuadratic(in float a, in complex b, in complex c, inout complex r1, inout complex r2) {
+	// Solves The Quadratic Equation Having Complex Coefficients And Gives Out Complex Roots Using Quadratic Formula
+
     complex sqrtdiscriminant = pow(add(multiply(b, b), invert(multiply(c, 4.0 * a))), 0.5);
     r1 = divide(add(invert(sqrtdiscriminant), invert(b)), 2.0 * a);
     r2 = divide(add(sqrtdiscriminant, invert(b)), 2.0 * a);
 }
 
 void solveCubic(in float a, in float b, in float c, in float d, inout complex r1, inout complex r2, inout complex r3) {
+	// Solves The Cubic Equation Having Real Coefficients And Gives Out Complex Roots Of The Cubic Equation Using General Cubic Formula
+
     float D0 = b * b - 3.0 * a * c;
     float D1 = 2.0 * b * b * b - 9.0 * a * b * c + 27.0 * a * a * d;
     complex C = pow(divide(add(pow(complex(D1 * D1 - 4.0 * D0 * D0 * D0, 0.0), 0.5), D1), 2.0), 1.0 / 3.0);
@@ -335,6 +341,7 @@ void solveCubic(in float a, in float b, in float c, in float d, inout complex r1
     r2 = invert(divide(add(add(divide(complex(D0, 0.0), e1C), e1C), b), 3.0 * a));
     r3 = invert(divide(add(add(divide(complex(D0, 0.0), e2C), e2C), b), 3.0 * a));
 
+	// Set Imaginary To Zero If It Was Within Small Range Because Of Floating Point Precision Limit
     if ((r1.imaginary < 1e-6) && (r1.imaginary > -1e-6)) {
         r1.imaginary = 0.0;
     }
@@ -347,16 +354,22 @@ void solveCubic(in float a, in float b, in float c, in float d, inout complex r1
 }
 
 void solveQuartic(in float a4, in float a3, in float a2, in float a1, in float a0, inout complex a, inout complex b, inout complex c, inout complex d) {
+	// Solves The Quartic Equation Having Real Coefficients And Gives Out Complex Roots Of The Quartic Equation Using An Algorithm
+	// The Idea Of This Algorithm Can Be Found Here: https://people.math.harvard.edu/~landesman/assets/solving-the-cubic-and-quartic.pdf
+
+	// Change The Quartic Equation Such That The Coefficient Of x^4 Is 1.
 	float alpha = a3 / a4;
 	float beta = a2 / a4;
 	float gamma = a1 / a4;
 	float delta = a0 / a4;
 
+	// Solve The Cubic Equation
     complex r1 = complex(0.0, 0.0);
     complex r2 = complex(0.0, 0.0);
     complex r3 = complex(0.0, 0.0);
     solveCubic(1.0, -beta, alpha * gamma - 4.0 * delta, -(alpha * alpha * delta - 4.0 * beta * delta + gamma * gamma), r1, r2, r3);
 
+	// Solve 3 Quadratics And Then Find The Roots Of Quartic Equation
     complex r11 = complex(0.0, 0.0);
     complex r12 = complex(0.0, 0.0);
     complex r21 = complex(0.0, 0.0);
@@ -373,6 +386,7 @@ void solveQuartic(in float a4, in float a3, in float a2, in float a1, in float a
 }
 
 bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout material mat) {
+	// I Will Add Other Comments Later, Currently I Don't Have Time For This
 	vec3 o = ray.origin.xzy;
 	vec3 d = ray.dir.xzy;
 	float a4 = dot(vec3(d.x, d.y, 10.0 * d.z), d * d * d) + 2.0 * dot(d.xyz * d.xyz, d.yzx * d.yzx);
@@ -419,9 +433,9 @@ bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout materi
 		normal.z = 4.0 * y * y * y + 4.0 * x * x * y - 6.0 * x * x + 6.0 * y * y + 4.0 * y * z * z;
 		normal = normalize(normal);
 		mat = GetMaterial(1);
+		return true;
 	}
-
-	return true;
+	return false;
 }
 
 float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
@@ -469,8 +483,9 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 	}
 	offset += 11*numObjects[3];
-	ray.origin -= vec3(1.0, 1.0, -7.0);
-	thritorius(ray, hitdist, normal, mat);
+	// Temporarily Removed Thritorius Due To Bugs
+	//ray.origin -= vec3(1.0, 1.0, -7.0);
+	//thritorius(ray, hitdist, normal, mat);
 
 	return hitdist;
 }
@@ -724,6 +739,11 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	// Ray Passes Through The Lens Here
 	TracePathLens(l, ray, forwardDir);
 	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InvSpectraPDF(390.0, 720.0);
+	
+	// Debug
+	//vec3 normal = vec3(0.0);
+	//material mat;
+	//color += Intersection(ray, normal, mat);
 
 	return color;
 }
