@@ -678,7 +678,7 @@ int main(int argc, char* argv[])
 			glUniform4f(glGetUniformLocation(shaderProgram, "lensData"), Camera.lensRadius, Camera.lensFocalLength, Camera.lensThickness, Camera.lensDistance);
 			glUniform1i(glGetUniformLocation(shaderProgram, "samplesPerFrame"), samplesPerFrame);
 			glUniform1i(glGetUniformLocation(shaderProgram, "pathLength"), pathLength);
-			glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
+			//glUniform1fv(glGetUniformLocation(shaderProgram, "CIEXYZ2006"), sizeof(CIEXYZ2006) / sizeof(float), CIEXYZ2006);
 			int numObjects[] = { (int)spheres.size(), (int)planes.size(), (int)boxes.size(), (int)lenses.size() };
 			glUniform1iv(glGetUniformLocation(shaderProgram, "numObjects"), sizeof(numObjects) / sizeof(int), numObjects);
 			std::vector <float> objectsArray;
