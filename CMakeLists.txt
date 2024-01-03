@@ -14,7 +14,8 @@ add_executable(VulkanApp src/vulkanapp.cpp)
 
 target_include_directories(VulkanApp PUBLIC ${SDL2_INCLUDE_DIRS})
 target_include_directories(VulkanApp PUBLIC "${PROJECT_SOURCE_DIR}/includes")
-target_link_libraries(VulkanApp ${SDL2_LIBRARIES} SDL2_image::SDL2_image)
+target_include_directories(VulkanApp PUBLIC "C:/VulkanSDK/1.3.268.0/Include")
+target_link_libraries(VulkanApp ${SDL2_LIBRARIES} SDL2_image::SDL2_image C:/VulkanSDK/1.3.268.0/Lib/vulkan-1.lib)
 
 # Thank You So Much https://stackoverflow.com/questions/10671916/how-to-copy-dll-files-into-the-same-folder-as-the-executable-using-cmake/10672739#10672739
 # Check If It Is x86 Or x64
