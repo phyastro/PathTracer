@@ -13,6 +13,18 @@
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
 
+#define ISDEBUG
+
+const std::vector<const char*> validationLayers = {
+	"VK_LAYER_KHRONOS_validation"
+};
+
+#ifdef ISDEBUG
+	const bool isValidationLayersEnabled = true;
+#else
+	const bool isValidationLayersEnabled = false;
+#endif
+
 namespace ManageSDL{
     void SDLHandleEvents(bool& isRunning) {
         SDL_Event event;
@@ -44,7 +56,33 @@ private:
         window = SDL_CreateWindow("Vulkan App", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, WindowFlags);
     }
 
+	bool checkValidationLayerSupport() {
+		uint32_t layersCount;
+		vkEnumerateInstanceLayerProperties(&layersCount, nullptr);
+		std::vector<VkLayerProperties> availableLayers(layersCount);
+		vkEnumerateInstanceLayerProperties(&layersCount, availableLayers.data());
+
+		for(const char* layerName : validationLayers) {
+			bool layerFound = false;
+			for(const VkLayerProperties &layerProperties : availableLayers) {
+				if (strcmp(layerName, layerProperties.layerName) == 0) {
+					layerFound = true;
+					break;
+				}
+			}
+
+			if (!layerFound) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	void CreateInstance() {
+		if (isValidationLayersEnabled && !checkValidationLayerSupport()) {
+			throw std::runtime_error("Validation Layers Are Requested But Not Available!");
+		}
+
 		VkApplicationInfo appInfo{};
 		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 		appInfo.pApplicationName = "Vulkan App";
@@ -57,12 +95,12 @@ private:
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		createInfo.pApplicationInfo = &appInfo;
 
-		uint32_t requiredExtensionsCount = 0;
-		vkEnumerateInstanceExtensionProperties(nullptr, &requiredExtensionsCount, nullptr);
-		std::vector<VkExtensionProperties> requiredExtensions(requiredExtensionsCount);
-		vkEnumerateInstanceExtensionProperties(nullptr, &requiredExtensionsCount, requiredExtensions.data());
+		uint32_t availableExtensionsCount = 0;
+		vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, nullptr);
+		std::vector<VkExtensionProperties> availableExtensions(availableExtensionsCount);
+		vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, availableExtensions.data());
 		std::cout << "Available Extensions:" << std::endl;
-		for(const VkExtensionProperties &extension : requiredExtensions) {
+		for(const VkExtensionProperties &extension : availableExtensions) {
 			std::cout << "\t" << extension.extensionName << std::endl;
 		}
 
@@ -79,7 +117,12 @@ private:
 		createInfo.ppEnabledExtensionNames = SDLExtensionsNames;
 		delete[] SDLExtensionsNames;
 
-		createInfo.enabledLayerCount = 0;
+		if (isValidationLayersEnabled) {
+			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+			createInfo.ppEnabledLayerNames = validationLayers.data();
+		} else {
+			createInfo.enabledLayerCount = 0;
+		}
 
 		if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
 			throw std::runtime_error("Instance Creation Failed!");
