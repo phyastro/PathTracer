@@ -1,14 +1,17 @@
 #include <vulkan/vulkan.h>
 #include <SDL.h>
+#include <SDL_vulkan.h>
 #include <SDL_image.h>
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 
 #include <iostream>
+#include <stdexcept>
+#include <cstdlib>
 #include <vector>
 
-const uint32_t WIDTH = 800;
-const uint32_t HEIGHT = 600;
+const unsigned int WIDTH = 800;
+const unsigned int HEIGHT = 600;
 
 namespace ManageSDL{
     void SDLHandleEvents(bool& isRunning) {
@@ -32,6 +35,7 @@ public:
     }
 private:
     SDL_Window* window;
+	VkInstance instance;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -39,8 +43,51 @@ private:
         Uint32 WindowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN;
         window = SDL_CreateWindow("Vulkan App", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, WindowFlags);
     }
-    void InitVulkan() {
 
+	void CreateInstance() {
+		VkApplicationInfo appInfo{};
+		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		appInfo.pApplicationName = "Vulkan App";
+		appInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+		appInfo.pEngineName = "No Engine";
+		appInfo.engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+		appInfo.apiVersion = VK_API_VERSION_1_3;
+
+		VkInstanceCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		createInfo.pApplicationInfo = &appInfo;
+
+		uint32_t requiredExtensionsCount = 0;
+		vkEnumerateInstanceExtensionProperties(nullptr, &requiredExtensionsCount, nullptr);
+		std::vector<VkExtensionProperties> requiredExtensions(requiredExtensionsCount);
+		vkEnumerateInstanceExtensionProperties(nullptr, &requiredExtensionsCount, requiredExtensions.data());
+		std::cout << "Available Extensions:" << std::endl;
+		for(const VkExtensionProperties &extension : requiredExtensions) {
+			std::cout << "\t" << extension.extensionName << std::endl;
+		}
+
+		uint32_t SDLExtensionsCount = 0;
+		const char** SDLExtensionsNames;
+		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, nullptr);
+		SDLExtensionsNames = new const char*[SDLExtensionsCount];
+		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, SDLExtensionsNames);
+		std::cout << "Required Extensions:" << std::endl;
+		for(uint32_t i = 0; i < SDLExtensionsCount; i++) {
+			std::cout << "\t" << SDLExtensionsNames[i] << std::endl;
+		}
+		createInfo.enabledExtensionCount = SDLExtensionsCount;
+		createInfo.ppEnabledExtensionNames = SDLExtensionsNames;
+		delete[] SDLExtensionsNames;
+
+		createInfo.enabledLayerCount = 0;
+
+		if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
+			throw std::runtime_error("Instance Creation Failed!");
+		}
+	}
+
+    void InitVulkan() {
+        CreateInstance();
     }
     
     void MainLoop() {
@@ -52,6 +99,7 @@ private:
     }
 
     void CleanUp() {
+		vkDestroyInstance(instance, nullptr);
         SDL_DestroyWindow(window);
         SDL_Quit();
     }
