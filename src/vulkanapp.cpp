@@ -37,6 +37,29 @@ namespace ManageSDL{
     }
 }
 
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, 
+const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, 
+const VkAllocationCallbacks *pAllocator, 
+VkDebugUtilsMessengerEXT *pDebugMessenger) {
+	PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT)
+	vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+	if (func != nullptr) {
+		return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+	} else {
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	}
+}
+
+void DestoryDebugUtilsMessengerEXT(VkInstance instance, 
+VkDebugUtilsMessengerEXT debugMessenger, 
+const VkAllocationCallbacks* pAllocator) {
+	PFN_vkDestroyDebugUtilsMessengerEXT func = (PFN_vkDestroyDebugUtilsMessengerEXT)
+	vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+	if (func != nullptr) {
+		func(instance, debugMessenger, pAllocator);
+	}
+}
+
 class VulkanApp {
 public:
     void run() {
@@ -48,6 +71,7 @@ public:
 private:
     SDL_Window* window;
 	VkInstance instance;
+	VkDebugUtilsMessengerEXT debugMessenger;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -78,6 +102,22 @@ private:
 		return true;
 	}
 
+	std::vector<const char*> getRequiredExtensions() {
+		uint32_t SDLExtensionsCount = 0;
+		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, nullptr);
+		std::vector<const char*> extensions(SDLExtensionsCount);
+		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, extensions.data());
+		if (isValidationLayersEnabled) {
+			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		}
+		std::cout << "Required Extensions:" << std::endl;
+		for(const char* extensionName : extensions) {
+			std::cout << "\t" << extensionName << std::endl;
+		}
+
+		return extensions;
+	}
+
 	void CreateInstance() {
 		if (isValidationLayersEnabled && !checkValidationLayerSupport()) {
 			throw std::runtime_error("Validation Layers Are Requested But Not Available!");
@@ -104,18 +144,9 @@ private:
 			std::cout << "\t" << extension.extensionName << std::endl;
 		}
 
-		uint32_t SDLExtensionsCount = 0;
-		const char** SDLExtensionsNames;
-		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, nullptr);
-		SDLExtensionsNames = new const char*[SDLExtensionsCount];
-		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, SDLExtensionsNames);
-		std::cout << "Required Extensions:" << std::endl;
-		for(uint32_t i = 0; i < SDLExtensionsCount; i++) {
-			std::cout << "\t" << SDLExtensionsNames[i] << std::endl;
-		}
-		createInfo.enabledExtensionCount = SDLExtensionsCount;
-		createInfo.ppEnabledExtensionNames = SDLExtensionsNames;
-		delete[] SDLExtensionsNames;
+		std::vector<const char*> extensions = getRequiredExtensions();
+		createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+		createInfo.ppEnabledExtensionNames = extensions.data();
 
 		if (isValidationLayersEnabled) {
 			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -129,8 +160,38 @@ private:
 		}
 	}
 
+	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, 
+	VkDebugUtilsMessageTypeFlagsEXT messageType, 
+	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, 
+	void *pUserData) {
+		std::cerr << "Validation Layer: " << pCallbackData->pMessage << std::endl;
+
+		return VK_FALSE;
+	}
+
+	void SetupDebugMessenger() {
+		if (!isValidationLayersEnabled) {
+			return;
+		}
+
+		VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+		createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+		VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+		createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+		VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+		VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+		createInfo.pfnUserCallback = DebugCallback;
+
+		if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Set Up Debug Messenger!");
+		}
+	}
+
     void InitVulkan() {
         CreateInstance();
+		SetupDebugMessenger();
     }
     
     void MainLoop() {
@@ -142,6 +203,9 @@ private:
     }
 
     void CleanUp() {
+		if (isValidationLayersEnabled) {
+			DestoryDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+		}
 		vkDestroyInstance(instance, nullptr);
         SDL_DestroyWindow(window);
         SDL_Quit();
