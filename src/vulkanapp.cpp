@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <vector>
+#include <map>
 
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
@@ -72,6 +73,7 @@ private:
     SDL_Window* window;
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -189,9 +191,50 @@ private:
 		}
 	}
 
+	int RateDeviceSuitability(VkPhysicalDevice device) {
+		int score = 0;
+		VkPhysicalDeviceProperties deviceProperties;
+		vkGetPhysicalDeviceProperties(device, &deviceProperties);
+		VkPhysicalDeviceFeatures deviceFeatures;
+		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+			score += 100;
+		}
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU) {
+			score += 300;
+		}
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+			score += 1000;
+		}
+		return score;
+	}
+
+	void PickPhysicalDevice() {
+		uint32_t devicesCount;
+		vkEnumeratePhysicalDevices(instance, &devicesCount, nullptr);
+		if (devicesCount == 0) {
+			throw std::runtime_error("Failed To Find GPUs With Vulkan Support!");
+		}
+		std::vector<VkPhysicalDevice> devices(devicesCount);
+		vkEnumeratePhysicalDevices(instance, &devicesCount, devices.data());
+		std::multimap<int, VkPhysicalDevice> deviceScores;
+		for (const VkPhysicalDevice &device : devices) {
+			int score = RateDeviceSuitability(device);
+			deviceScores.insert(std::make_pair(score, device));
+		}
+
+		if (deviceScores.rbegin()->first > 0) {
+			physicalDevice = deviceScores.rbegin()->second;
+		} else {
+			throw std::runtime_error("Failed To Find A Suitable GPU!");
+		}
+	}
+
     void InitVulkan() {
         CreateInstance();
 		SetupDebugMessenger();
+		PickPhysicalDevice();
     }
     
     void MainLoop() {
