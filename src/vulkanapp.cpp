@@ -80,8 +80,11 @@ public:
     }
 private:
     SDL_Window* window;
+
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
+	VkSurfaceKHR surface;
+	
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkDevice device;
 	VkQueue graphicsQueue;
@@ -202,6 +205,12 @@ private:
 		}
 	}
 
+	void CreateSurface() {
+		if (SDL_Vulkan_CreateSurface(window, instance, &surface) != SDL_TRUE) {
+			throw std::runtime_error("Window Surface Creation Failed!");
+		}
+	}
+
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) {
 		QueueFamilyIndices indices;
 		uint32_t queueFamilyCount = 0;
@@ -310,6 +319,7 @@ private:
     void InitVulkan() {
         CreateInstance();
 		SetupDebugMessenger();
+		CreateSurface();
 		PickPhysicalDevice();
 		CreateLogicalDevice();
     }
@@ -324,10 +334,13 @@ private:
 
     void CleanUp() {
 		vkDestroyDevice(device, nullptr);
+
 		if (isValidationLayersEnabled) {
 			DestoryDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
+		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyInstance(instance, nullptr);
+
         SDL_DestroyWindow(window);
         SDL_Quit();
     }
