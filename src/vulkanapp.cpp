@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <vector>
 #include <map>
+#include <optional>
 
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
@@ -191,6 +192,41 @@ private:
 		}
 	}
 
+	struct QueueFamilyIndices {
+		std::optional<uint32_t> graphicsFamily;
+
+		bool IsComplete() {
+			return graphicsFamily.has_value();
+		}
+	};
+
+	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) {
+		QueueFamilyIndices indices;
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+		int i = 0;
+		for (const VkQueueFamilyProperties &queueFamily : queueFamilies) {
+			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+				indices.graphicsFamily = i;
+			}
+			if (indices.IsComplete()) {
+				break;
+			}
+			i++;
+		}
+
+		return indices;
+	}
+
+	bool IsDeviceSuitable(VkPhysicalDevice device) {
+		QueueFamilyIndices indices = FindQueueFamilies(device);
+
+		return indices.IsComplete();
+	}
+
 	int RateDeviceSuitability(VkPhysicalDevice device) {
 		int score = 0;
 		VkPhysicalDeviceProperties deviceProperties;
@@ -207,6 +243,11 @@ private:
 		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
 			score += 1000;
 		}
+
+		if (!IsDeviceSuitable(device)) {
+			return 0;
+		}
+
 		return score;
 	}
 
