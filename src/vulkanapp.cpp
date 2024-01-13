@@ -62,6 +62,14 @@ const VkAllocationCallbacks* pAllocator) {
 	}
 }
 
+struct QueueFamilyIndices {
+	std::optional<uint32_t> graphicsFamily;
+
+	bool IsComplete() {
+		return graphicsFamily.has_value();
+	}
+};
+
 class VulkanApp {
 public:
     void run() {
@@ -75,6 +83,8 @@ private:
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+	VkDevice device;
+	VkQueue graphicsQueue;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -192,14 +202,6 @@ private:
 		}
 	}
 
-	struct QueueFamilyIndices {
-		std::optional<uint32_t> graphicsFamily;
-
-		bool IsComplete() {
-			return graphicsFamily.has_value();
-		}
-	};
-
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) {
 		QueueFamilyIndices indices;
 		uint32_t queueFamilyCount = 0;
@@ -272,10 +274,44 @@ private:
 		}
 	}
 
+	void CreateLogicalDevice() {
+		QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
+
+		VkDeviceQueueCreateInfo queueCreateInfo{};
+		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+		queueCreateInfo.queueCount = 1;
+		float queuePriority = 1.0f;
+		queueCreateInfo.pQueuePriorities = &queuePriority;
+
+		VkPhysicalDeviceFeatures deviceFeatures{};
+
+		VkDeviceCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		createInfo.pQueueCreateInfos = &queueCreateInfo;
+		createInfo.queueCreateInfoCount = 1;
+		createInfo.pEnabledFeatures = &deviceFeatures;
+		createInfo.enabledExtensionCount = 0;
+
+		if (isValidationLayersEnabled) {
+			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+			createInfo.ppEnabledLayerNames = validationLayers.data();
+		} else {
+			createInfo.enabledLayerCount = 0;
+		}
+
+		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+			throw std::runtime_error("Logical Device Creation Failed!");
+		}
+
+		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+	}
+
     void InitVulkan() {
         CreateInstance();
 		SetupDebugMessenger();
 		PickPhysicalDevice();
+		CreateLogicalDevice();
     }
     
     void MainLoop() {
@@ -287,6 +323,7 @@ private:
     }
 
     void CleanUp() {
+		vkDestroyDevice(device, nullptr);
 		if (isValidationLayersEnabled) {
 			DestoryDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
