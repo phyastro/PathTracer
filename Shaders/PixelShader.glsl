@@ -261,131 +261,101 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 	}
 }
 
-struct complex{
-    float real;
-    float imaginary;
-};
-
-complex add(in complex z, in float c) {
-    return complex(z.real + c, z.imaginary);
+float evalQuadratic(in float a, in float b, in float c, in float x) {
+	return x * (x * a + b) + c;
 }
 
-complex add(in complex z1, in complex z2) {
-    return complex(z1.real + z2.real, z1.imaginary + z2.imaginary);
+vec3 evalQuadratic(in float a, in float b, in float c, in vec3 x) {
+	return x * (x * a + b) + c;
 }
 
-complex invert(in complex z) {
-    return complex(-z.real, -z.imaginary);
+float evalCubic(in float a, in float b, in float c, in float d, in float x) {
+	return x * (x * (x * a + b) + c) + d;
 }
 
-complex multiply(in complex z, in float c) {
-    return complex(z.real * c, z.imaginary * c);
+vec2 evalCubic(in float a, in float b, in float c, in float d, in vec2 x) {
+	return x * (x * (x * a + b) + c) + d;
 }
 
-complex multiply(in complex z1, in complex z2) {
-    return complex(z1.real * z2.real - z1.imaginary * z2.imaginary, z1.real * z2.imaginary + z1.imaginary * z2.real);
+vec3 evalCubic(in float a, in float b, in float c, in float d, in vec3 x) {
+	return x * (x * (x * a + b) + c) + d;
 }
 
-complex divide(in complex z, in float c) {
-    return complex(z.real / c, z.imaginary / c);
+vec2 evalQuartic(in float a, in float b, in float c, in float d, in float e, in vec2 x) {
+	return x * (x * (x * (x * a + b) + c) + d) + e;
 }
 
-complex divide(in complex z1, in complex z2) {
-    return complex((z1.real * z2.real + z1.imaginary * z2.imaginary) / (z2.real * z2.real + z2.imaginary * z2.imaginary), (z1.imaginary * z2.real - z1.real * z2.imaginary) / (z2.real * z2.real + z2.imaginary * z2.imaginary));
+bvec3 solveCubic(in float b, in float c, in float d, inout vec3 roots) {
+    // https://arxiv.org/abs/1903.10041
+    // Solves Cubic Equation By Combining Two Different Methods To Find Real Roots
+    float bdiv3 = b / 3.0;
+    float Q = c / 3.0 - bdiv3 * bdiv3;
+    float R = 0.5 * bdiv3 * c - bdiv3 * bdiv3 * bdiv3 - 0.5 * d;
+	float D = Q * Q * Q + R * R;
+	if (D > 0.0) {
+		// Fix Issue In Calculating Signs Using pow For Cube Root
+		float u = R + sqrt(D);
+		float v = R - sqrt(D);
+		float S = sign(u) * pow(abs(u), 1.0 / 3.0);
+		float T = sign(v) * pow(abs(v), 1.0 / 3.0);
+		roots.x = S + T - bdiv3;
+		// Apply Newton Raphson Method 2 Times To Increase The Accuracy
+		for (int i = 0; i < 2; i++) {
+			roots.x -= evalCubic(1.0, b, c, d, roots.x) / evalQuadratic(3.0, 2.0 * b, c, roots.x);
+		}
+		return bvec3(true, false, false);
+	}
+	float sqrtnegQ = sqrt(-Q);
+	float thetadiv3 = acos(R / (sqrtnegQ * sqrtnegQ * sqrtnegQ)) / 3.0;
+	roots = 2.0 * sqrtnegQ * vec3(cos(thetadiv3), cos(thetadiv3 + 2.0 * PI / 3.0), cos(thetadiv3 + 4.0 * PI / 3.0)) - bdiv3;
+	// Apply Newton Raphson Method 2 Times To Increase The Accuracy
+	for (int i = 0; i < 2; i++) {
+		roots -= evalCubic(1.0, b, c, d, roots) / evalQuadratic(3.0, 2.0 * b, c, roots);
+	}
+	return bvec3(true);
 }
 
-float modulus(in complex z) {
-    return sqrt(z.real * z.real + z.imaginary * z.imaginary);
-}
-
-complex pow(in complex z, in float n) {
-	// Power Of Complex Number Calculator, Using De Moivre's Theorem
-
-    // Convert Cartesian Form Into Polar Form
-    float r = modulus(z);
-	float theta = atan(z.imaginary, z.real);
-
-    // De Moivre's Theorem
-    complex new_z = complex(cos(n * theta) * pow(r, n), sin(n * theta) * pow(r, n));
-    if ((new_z.real < 1e-6) && (new_z.real > -1e-6)) {
-        new_z.real = 0.0;
-    }
-    if ((new_z.imaginary < 1e-6) && (new_z.imaginary > -1e-6)) {
-        new_z.imaginary = 0.0;
-    }
-
-    return new_z;
-}
-
-void solveQuadratic(in float a, in complex b, in complex c, inout complex r1, inout complex r2) {
-	// Solves The Quadratic Equation Having Complex Coefficients And Gives Out Complex Roots Using Quadratic Formula
-
-    complex sqrtdiscriminant = pow(add(multiply(b, b), invert(multiply(c, 4.0 * a))), 0.5);
-    r1 = divide(add(invert(sqrtdiscriminant), invert(b)), 2.0 * a);
-    r2 = divide(add(sqrtdiscriminant, invert(b)), 2.0 * a);
-}
-
-void solveCubic(in float a, in float b, in float c, in float d, inout complex r1, inout complex r2, inout complex r3) {
-	// Solves The Cubic Equation Having Real Coefficients And Gives Out Complex Roots Of The Cubic Equation Using General Cubic Formula
-
-    float D0 = b * b - 3.0 * a * c;
-    float D1 = 2.0 * b * b * b - 9.0 * a * b * c + 27.0 * a * a * d;
-    complex C = pow(divide(add(pow(complex(D1 * D1 - 4.0 * D0 * D0 * D0, 0.0), 0.5), D1), 2.0), 1.0 / 3.0);
-
-    complex e1 = complex(-0.5, 0.5 * sqrt(3.0));
-    complex e2 = complex(-0.5, -0.5 * sqrt(3.0));
-    complex e1C = multiply(e1, C);
-    complex e2C = multiply(e2, C);
-    r1 = invert(divide(add(add(divide(complex(D0, 0.0), C), C), b), 3.0 * a));
-    r2 = invert(divide(add(add(divide(complex(D0, 0.0), e1C), e1C), b), 3.0 * a));
-    r3 = invert(divide(add(add(divide(complex(D0, 0.0), e2C), e2C), b), 3.0 * a));
-
-	// Set Imaginary To Zero If It Was Within Small Range Because Of Floating Point Precision Limit
-    if ((r1.imaginary < 1e-6) && (r1.imaginary > -1e-6)) {
-        r1.imaginary = 0.0;
-    }
-    if ((r2.imaginary < 1e-6) && (r2.imaginary > -1e-6)) {
-        r2.imaginary = 0.0;
-    }
-    if ((r3.imaginary < 1e-6) && (r3.imaginary > -1e-6)) {
-        r3.imaginary = 0.0;
-    }
-}
-
-void solveQuartic(in float a4, in float a3, in float a2, in float a1, in float a0, inout complex a, inout complex b, inout complex c, inout complex d) {
-	// Solves The Quartic Equation Having Real Coefficients And Gives Out Complex Roots Of The Quartic Equation Using An Algorithm
-	// The Idea Of This Algorithm Can Be Found Here: https://people.math.harvard.edu/~landesman/assets/solving-the-cubic-and-quartic.pdf
-
-	// Change The Quartic Equation Such That The Coefficient Of x^4 Is 1.
-	float alpha = a3 / a4;
-	float beta = a2 / a4;
-	float gamma = a1 / a4;
-	float delta = a0 / a4;
-
-	// Solve The Cubic Equation
-    complex r1 = complex(0.0, 0.0);
-    complex r2 = complex(0.0, 0.0);
-    complex r3 = complex(0.0, 0.0);
-    solveCubic(1.0, -beta, alpha * gamma - 4.0 * delta, -(alpha * alpha * delta - 4.0 * beta * delta + gamma * gamma), r1, r2, r3);
-
-	// Solve 3 Quadratics And Then Find The Roots Of Quartic Equation
-    complex r11 = complex(0.0, 0.0);
-    complex r12 = complex(0.0, 0.0);
-    complex r21 = complex(0.0, 0.0);
-    complex r22 = complex(0.0, 0.0);
-    complex r31 = complex(0.0, 0.0);
-    complex r32 = complex(0.0, 0.0);
-    solveQuadratic(1.0, invert(r1), complex(delta, 0.0), r31, r32);
-    solveQuadratic(1.0, invert(r2), complex(delta, 0.0), r11, r12);
-    solveQuadratic(1.0, invert(r3), complex(delta, 0.0), r21, r22);
-    a = divide(multiply(add(r21, r31), -gamma), add(multiply(add(r32, r22), add(add(r21, r31), r12)), multiply(r12, add(r21, r31))));
-    b = divide(r11, a);
-    c = divide(r21, a);
-    d = divide(r31, a);
+bvec4 solveQuartic(in float a, in float b, in float c, in float d, in float e, inout vec4 roots) {
+    // https://www.mdpi.com/2227-7390/10/14/2377
+	// Solves Quartic Equation By Using The Method Given In The Above Paper
+    float inva = 1.0 / a;
+    float inva2 = inva * 0.5;
+    float inva2a2 = inva2 * inva2;
+    float bb = b * b;
+    float p = -1.5 * bb * inva2a2 + c * inva;
+    float q = bb * b * inva2a2 * inva2 - b * c * inva * inva2 + d * inva;
+    float r = -0.1875 * bb * bb * inva2a2 * inva2a2 + 0.5 * c * bb * inva2a2 * inva2 - b * d * inva2a2 + e * inva;
+	vec3 s = vec3(0.0);
+    solveCubic(0.5 * -p, -r, 0.5 * p * r - 0.125 * q * q, s);
+    float s2subp = 2.0 * s.x - p;
+	if (s2subp < 0.0) {
+		return bvec4(false);
+	}
+	float invs2subp = -2.0 * s.x - p;
+	float sqrts2subp = sqrt(s2subp);
+	float q2divsqrt = 2.0 * q / sqrts2subp;
+	float invaddq2div = invs2subp + q2divsqrt;
+	float invsubq2div = invs2subp - q2divsqrt;
+	float bdiv4a = 0.25 * inva * b;
+	bvec4 isReal = bvec4(false);
+	if (invaddq2div >= 0.0) {
+		roots.xy = 0.5 * (-sqrts2subp + vec2(1.0, -1.0) * sqrt(invaddq2div)) - bdiv4a;
+		// Apply Newton Raphson Method To Increase The Accuracy
+		roots.xy -= evalQuartic(a, b, c, d, e, roots.xy) / evalCubic(4.0 * a, 3.0 * b, 2.0 * c, d, roots.xy);
+		isReal.xy = bvec2(true);
+	}
+	if (invsubq2div >= 0.0) {
+		roots.zw = 0.5 * (sqrts2subp + vec2(1.0, -1.0) * sqrt(invsubq2div)) - bdiv4a;
+		// Apply Newton Raphson Method To Increase The Accuracy
+		roots.zw -= evalQuartic(a, b, c, d, e, roots.zw) / evalCubic(4.0 * a, 3.0 * b, 2.0 * c, d, roots.zw);
+		isReal.zw = bvec2(true);
+	}
+	return isReal;
 }
 
 bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout material mat) {
-	// I Will Add Other Comments Later, Currently I Don't Have Time For This
+	// Equation: x^2(x^2 + 2y^2 - 6y + 2z^2) + y^2(y^2 + 2y + 2z^2) + z^2(10z^2 - 12) + 1 = 0
+	// Substitute Light Ray Equation Into This Equation To Get The Polynomial In Terms Of t, Substitution Has Been Done Manually, Then Solve For t Using The Quartic Equation Solver.
 	vec3 o = ray.origin.xzy;
 	vec3 d = ray.dir.xzy;
 	float a4 = dot(vec3(d.x, d.y, 10.0 * d.z), d * d * d) + 2.0 * dot(d.xyz * d.xyz, d.yzx * d.yzx);
@@ -394,36 +364,22 @@ bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout materi
 	float a1 = 4.0 * (dot(vec3(o.x, o.y, 10.0 * o.z) * o * o, d) + dot(o.xx * o.xx, o.yz * d.yz) + dot(o.yy * o.yy, o.xz * d.xz) + dot(o.zz * o.zz, o.xy * d.xy)) + 6.0 * o.y * o.y * d.y - 6.0 * o.x * o.x * d.y - 12.0 * o.x * o.y * d.x - 24.0 * o.z * d.z;
 	float a0 = dot(vec3(o.x, o.y, 10.0 * o.z), o * o * o) + 2.0 * dot(o.xxy * o.xxy, o.yzz * o.yzz) + 2.0 * o.y * o.y * o.y - 6.0 * o.x * o.x * o.y - 12.0 * o.z * o.z + 1.0;
 
-	complex r1 = complex(0.0, 0.0);
-	complex r2 = complex(0.0, 0.0);
-	complex r3 = complex(0.0, 0.0);
-	complex r4 = complex(0.0, 0.0);
-	solveQuartic(a4, a3, a2, a1, a0, r1, r2, r3, r4);
+	vec4 roots = vec4(0.0);
+	bvec4 isReal = solveQuartic(a4, a3, a2, a1, a0, roots);
 
 	float t = 1e6;
-	if ((r1.imaginary < 1e-6) && (r1.imaginary > -1e-6)) {
-		if ((r1.real < t) && (r1.real > 0.0)) {
-			t = r1.real;
-		}
-	}
-	if ((r2.imaginary < 1e-6) && (r2.imaginary > -1e-6)) {
-		if ((r2.real < t) && (r2.real > 0.0)) {
-			t = r2.real;
-		}
-	}
-	if ((r3.imaginary < 1e-6) && (r3.imaginary > -1e-6)) {
-		if ((r3.real < t) && (r3.real > 0.0)) {
-			t = r3.real;
-		}
-	}
-	if ((r4.imaginary < 1e-6) && (r4.imaginary > -1e-6)) {
-		if ((r4.real < t) && (r4.real > 0.0)) {
-			t = r4.real;
+	for (int i = 0; i < 4; i++) {
+		if (isReal[i]) {
+			if ((roots[i] < t) && (roots[i] > 0.0)) {
+				t = roots[i];
+			}
 		}
 	}
 
 	if (t < hitdist) {
 		hitdist = t;
+		// Find The Normals By Calculating The Gradient Of The Equation, Gradient Has Been Written Manually Through The Equations
+		// Gradient = normalize(<dx,dy,dz>)
 		float x = o.x + d.x * t;
 		float y = o.y + d.y * t;
 		float z = o.z + d.z * t;
@@ -482,9 +438,8 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 	}
 	offset += 11*numObjects[3];
-	// Temporarily Removed Thritorius Due To Bugs
-	//ray.origin -= vec3(1.0, 1.0, -7.0);
-	//thritorius(ray, hitdist, normal, mat);
+	ray.origin -= vec3(1.0, 1.0, -7.0);
+	thritorius(ray, hitdist, normal, mat);
 
 	return hitdist;
 }
@@ -738,11 +693,6 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	// Ray Passes Through The Lens Here
 	TracePathLens(l, ray, forwardDir);
 	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InvSpectraPDF(390.0, 720.0);
-	
-	// Debug
-	//vec3 normal = vec3(0.0);
-	//material mat;
-	//color += Intersection(ray, normal, mat);
 
 	return color;
 }
