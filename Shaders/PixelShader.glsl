@@ -378,8 +378,8 @@ bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout materi
 
 	if (t < hitdist) {
 		hitdist = t;
-		// Find The Normals By Calculating The Gradient Of The Equation, Gradient Has Been Written Manually Through The Equations
-		// Gradient = normalize(<dx,dy,dz>)
+		// Find The Normals By Calculating The Unit Gradient Of The Equation, Gradient Has Been Written Manually Through The Equations
+		// Unit Gradient = normalize(<∂f/∂x,∂f/∂y,∂f/∂z>)
 		float x = o.x + d.x * t;
 		float y = o.y + d.y * t;
 		float z = o.z + d.z * t;
