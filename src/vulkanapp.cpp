@@ -12,6 +12,9 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <cstdint>
+#include <limits>
+#include <algorithm>
 
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
@@ -250,7 +253,7 @@ private:
 		return indices;
 	}
 
-	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
+	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device) {
 		SwapChainSupportDetails details;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
 		
@@ -292,7 +295,7 @@ private:
 
 		bool isSwapChainAdequate = false;
 		if (isExtensionsSupported) {
-			SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+			SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(device);
 			isSwapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
 		}
 
@@ -383,6 +386,53 @@ private:
 
 		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
 		vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+	}
+
+	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+		for (const VkSurfaceFormatKHR& availableFormat : availableFormats) {
+			if (availableFormat.format == VK_FORMAT_B8G8R8_SRGB && 
+			availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+				std::cout << "Using VK_FORMAT_B8G8R8_SRGB With VK_COLOR_SPACE_SRGB_NONLINEAR_KHR" << std::endl;
+				return availableFormat;
+			}
+		}
+
+		std::cout << "Using Available Format With Available Colorspace" << std::endl;
+		return availableFormats[0];
+	}
+
+	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+		for (const VkPresentModeKHR& availablePresentMode : availablePresentModes) {
+			if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+				std::cout << "Using Presentation Mode VK_PRESENT_MODE_MAILBOX_KHR" << std::endl;
+				return availablePresentMode;
+			}
+		}
+
+		std::cout << "Using Presentation Mode VK_PRESENT_MODE_FIFO_KHR" << std::endl;
+		return VK_PRESENT_MODE_FIFO_KHR;
+	}
+
+	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+		if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+			return capabilities.currentExtent;
+		} else {
+			int width;
+			int height;
+			SDL_GetWindowSizeInPixels(window, &width, &height);
+			VkExtent2D actualExtent = {
+				static_cast<uint32_t>(width), 
+				static_cast<uint32_t>(height)
+			};
+			actualExtent.width = std::clamp(actualExtent.width, 
+				capabilities.minImageExtent.width, 
+				capabilities.maxImageExtent.width);
+			actualExtent.height = std::clamp(actualExtent.height, 
+				capabilities.minImageExtent.height, 
+				capabilities.maxImageExtent.height);
+			
+			return actualExtent;
+		}
 	}
 
     void InitVulkan() {
