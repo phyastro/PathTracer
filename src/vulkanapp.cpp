@@ -107,6 +107,9 @@ private:
 	VkQueue presentQueue;
 
 	VkSwapchainKHR swapChain;
+	std::vector<VkImage> swapChainImages;
+	VkFormat swapChainImageFormat;
+	VkExtent2D swapChainExtent;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -484,6 +487,14 @@ private:
 		if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Swap Chain!");
 		}
+
+		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+		swapChainImages.resize(imageCount);
+		std::cout << imageCount << std::endl;
+		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+
+		swapChainImageFormat = surfaceFormat.format;
+		swapChainExtent = extent;
 	}
 
     void InitVulkan() {
