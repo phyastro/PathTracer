@@ -109,6 +109,23 @@ material GetMaterial(in int index) {
 	return material;
 }
 
+bool BoundingSphere(in Ray ray, in vec3 pos, in float radius2) {
+	// Bounding Sphere To Check Whether Ray Is Going To Hit The Object
+	// Checks Sign Of Discriminant To Check Sphere Visibility And Removes The Fake Sphere Visible In The Opposite Direction
+	vec3 localorigin = ray.origin - pos;
+	float a = dot(ray.dir, ray.dir);
+	float b = 2.0 * dot(ray.dir, localorigin);
+	float c = dot(localorigin, localorigin) - radius2;
+	float discriminant = b * b - 4.0 * a * c;
+	if (discriminant < 0.0) {
+		return false;
+	}
+	if ((b >= 0.0) && ((a * c) >= 0.0)) {
+		return false;
+	}
+	return true;
+}
+
 bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Ray-Intersection Of Sphere
 	// Built By Solving The Equation: x^2 + y^2 + z^2 = r^2
@@ -164,7 +181,7 @@ bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 
 	ray.dir = ray.dir * matrix;
 	vec3 m = 1.0 / ray.dir;
 	vec3 n = m * localorigin;
-	vec3 k = abs(m) * object.size / 2.0;
+	vec3 k = abs(m) * object.size * 0.5;
 	vec3 k1 = -n - k;
 	vec3 k2 = -n + k;
 	float tN = max(k1.x, max(k1.y, k1.z));
@@ -356,6 +373,9 @@ bvec4 solveQuartic(in float a, in float b, in float c, in float d, in float e, i
 bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Equation: x^2(x^2 + 2y^2 - 6y + 2z^2) + y^2(y^2 + 2y + 2z^2) + z^2(10z^2 - 12) + 1 = 0
 	// Substitute Light Ray Equation Into This Equation To Get The Polynomial In Terms Of t, Substitution Has Been Done Manually, Then Solve For t Using The Quartic Equation Solver.
+	if (!BoundingSphere(ray, vec3(0.0, 0.0, 0.0), 4.05)) {
+		return false;
+	}
 	vec3 o = ray.origin.xzy;
 	vec3 d = ray.dir.xzy;
 	float a4 = dot(vec3(d.x, d.y, 10.0 * d.z), d * d * d) + 2.0 * dot(d.xyz * d.xyz, d.yzx * d.yzx);
@@ -421,6 +441,9 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		object.rotation = vec3(objects[10*i+3+offset], objects[10*i+4+offset], objects[10*i+5+offset]);
 		object.size = vec3(objects[10*i+6+offset], objects[10*i+7+offset], objects[10*i+8+offset]);
 		object.materialID = int(objects[10*i+9+offset])-1;
+		if (!BoundingSphere(ray, object.pos, 0.25 * dot(object.size, object.size))) {
+			continue;
+		}
 		BoxIntersection(ray, object, hitdist, normal, mat);
 	}
 	offset += 10*numObjects[2];
@@ -508,8 +531,8 @@ vec3 SampleCosineDirectionHemisphere(in vec3 normal, inout uint seed){
 
 float CosineDirectionPDF(in float costheta) {
 	// Idea: Integrating Over Cosine PDF Must Give 1
-    // Solution: Divide Cosine By Pi
-    // Note: Integrating Equation Is Solid Angle. Must Insert PDF Inside Integrals To Normalize
+	// Solution: Divide Cosine By Pi
+	// Note: Integrating Equation Is Solid Angle. Must Insert PDF Inside Integrals To Normalize
 	return costheta / PI;
 }
 
