@@ -102,8 +102,11 @@ private:
 
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkDevice device;
+
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
+
+	VkSwapchainKHR swapChain;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -112,7 +115,7 @@ private:
         window = SDL_CreateWindow("Vulkan App", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, WindowFlags);
     }
 
-	bool checkValidationLayerSupport() {
+	bool CheckValidationLayerSupport() {
 		uint32_t layersCount;
 		vkEnumerateInstanceLayerProperties(&layersCount, nullptr);
 		std::vector<VkLayerProperties> availableLayers(layersCount);
@@ -134,7 +137,7 @@ private:
 		return true;
 	}
 
-	std::vector<const char*> getRequiredExtensions() {
+	std::vector<const char*> GetRequiredExtensions() {
 		uint32_t SDLExtensionsCount = 0;
 		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, nullptr);
 		std::vector<const char*> extensions(SDLExtensionsCount);
@@ -151,7 +154,7 @@ private:
 	}
 
 	void CreateInstance() {
-		if (isValidationLayersEnabled && !checkValidationLayerSupport()) {
+		if (isValidationLayersEnabled && !CheckValidationLayerSupport()) {
 			throw std::runtime_error("Validation Layers Are Requested But Not Available!");
 		}
 
@@ -176,7 +179,7 @@ private:
 			std::cout << "\t" << extension.extensionName << std::endl;
 		}
 
-		std::vector<const char*> extensions = getRequiredExtensions();
+		std::vector<const char*> extensions = GetRequiredExtensions();
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 		createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -390,9 +393,9 @@ private:
 
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
 		for (const VkSurfaceFormatKHR& availableFormat : availableFormats) {
-			if (availableFormat.format == VK_FORMAT_B8G8R8_SRGB && 
+			if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && 
 			availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-				std::cout << "Using VK_FORMAT_B8G8R8_SRGB With VK_COLOR_SPACE_SRGB_NONLINEAR_KHR" << std::endl;
+				std::cout << "Using VK_FORMAT_B8G8R8A8_SRGB With VK_COLOR_SPACE_SRGB_NONLINEAR_KHR" << std::endl;
 				return availableFormat;
 			}
 		}
@@ -435,12 +438,61 @@ private:
 		}
 	}
 
+	void CreateSwapChain() {
+		SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(physicalDevice);
+
+		VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
+		VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
+		VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
+
+		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+		if ((swapChainSupport.capabilities.maxImageCount > 0) && (imageCount >> swapChainSupport.capabilities.maxImageCount)) {
+			imageCount = swapChainSupport.capabilities.maxImageCount;
+		}
+
+		VkSwapchainCreateInfoKHR createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+		createInfo.surface = surface;
+		createInfo.minImageCount = imageCount;
+		createInfo.imageFormat = surfaceFormat.format;
+		createInfo.imageColorSpace = surfaceFormat.colorSpace;
+		createInfo.imageExtent = extent;
+		createInfo.imageArrayLayers = 1;
+		createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		// VK_IMAGE_USAGE_TRANSFER_DST_BIT For Seperate Post-Processing And Then Display
+
+		QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
+		uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+		
+		if (indices.graphicsFamily != indices.presentFamily) {
+			createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT; // Slower
+			createInfo.queueFamilyIndexCount = 2;
+			createInfo.pQueueFamilyIndices = queueFamilyIndices;
+		} else {
+			createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; // Faster
+			createInfo.queueFamilyIndexCount = 0; // Optional
+			createInfo.pQueueFamilyIndices = nullptr; // Optional
+		}
+		
+		createInfo.preTransform = swapChainSupport.capabilities.currentTransform; // No Transformation To Images
+		createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // Ignore Alpha Channels
+		createInfo.presentMode = presentMode;
+		createInfo.clipped = VK_FALSE; // We Need To Care About Pixels Which Are Not Visible So, VK_FALSE
+
+		createInfo.oldSwapchain = VK_NULL_HANDLE; // TODO, We Need This To Be Enabled To Resize Window, Etc.
+
+		if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Swap Chain!");
+		}
+	}
+
     void InitVulkan() {
         CreateInstance();
 		SetupDebugMessenger();
 		CreateSurface();
 		PickPhysicalDevice();
 		CreateLogicalDevice();
+		CreateSwapChain();
     }
     
     void MainLoop() {
@@ -452,6 +504,8 @@ private:
     }
 
     void CleanUp() {
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
+
 		vkDestroyDevice(device, nullptr);
 
 		if (isValidationLayersEnabled) {
