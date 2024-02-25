@@ -113,14 +113,12 @@ bool BoundingSphere(in Ray ray, in vec3 pos, in float radius2) {
 	// Bounding Sphere To Check Whether Ray Is Going To Hit The Object
 	// Checks Sign Of Discriminant To Check Sphere Visibility And Removes The Fake Sphere Visible In The Opposite Direction
 	vec3 localorigin = ray.origin - pos;
-	float a = dot(ray.dir, ray.dir);
-	float b = 2.0 * dot(ray.dir, localorigin);
+	float b = dot(ray.dir, localorigin);
 	float c = dot(localorigin, localorigin) - radius2;
-	float discriminant = b * b - 4.0 * a * c;
-	if (discriminant < 0.0) {
+	if ((b * b) < c) {
 		return false;
 	}
-	if ((b >= 0.0) && ((a * c) >= 0.0)) {
+	if ((b >= 0.0) && (c >= 0.0)) {
 		return false;
 	}
 	return true;
@@ -130,17 +128,17 @@ bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout
 	// Ray-Intersection Of Sphere
 	// Built By Solving The Equation: x^2 + y^2 + z^2 = r^2
 	vec3 localorigin = ray.origin - object.pos;
-	float a = dot(ray.dir, ray.dir);
 	float b = 2.0 * dot(ray.dir, localorigin);
 	float c = dot(localorigin, localorigin) - (object.radius * object.radius);
-	float discriminant = b * b - 4.0 * a * c;
+	float discriminant = b * b - 4.0 * c;
 	float t = 1e6;
 	int isOutside = 1;
 	if (discriminant < 0.0) {
 		return false;
 	}
-	float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-	float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+	float sqrtD = sqrt(discriminant);
+	float t1 = (-b - sqrtD) * 0.5;
+	float t2 = (-b + sqrtD) * 0.5;
 	t = (t1 > 0.0) ? t1 : t2;
 	isOutside = (t1 > 0.0) ? 1 : -1;
 	if (t < 1e-4) {
@@ -220,17 +218,17 @@ bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSl
 		localRay.origin.x -= localSlicePos - object.sliceSize - sliceOffset;
 	}
 	localRay.dir = ray.dir * matrix;
-	float a = dot(localRay.dir, localRay.dir);
 	float b = 2.0 * dot(localRay.dir, localRay.origin);
 	float c = dot(localRay.origin, localRay.origin) - (object.radius * object.radius);
-	float discriminant = b * b - 4.0 * a * c;
+	float discriminant = b * b - 4.0 * c;
 	float t = 1e6;
 	int isOut = 1;
 	if (discriminant < 0.0) {
 		return false;
 	}
-	float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-	float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+	float sqrtD = sqrt(discriminant);
+	float t1 = (-b - sqrtD) * 0.5;
+	float t2 = (-b + sqrtD) * 0.5;
 	if (object.is1stSlice) {
 		t1 = (fma(localRay.dir.x, t1, localRay.origin.x) > -sliceOffset) ? 1e6 : t1;
 		t2 = (fma(localRay.dir.x, t2, localRay.origin.x) > -sliceOffset) ? 1e6 : t2;
@@ -260,17 +258,17 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 	// Ray-Intersection Of Lens
 	// Done By Joining Two Slices Of Sphere
 	// Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
-	float lensThickness = 4.0 * object.focalLength - 2.0 * sqrt(4.0 * object.focalLength * object.focalLength - object.radius * object.radius);
+	float lensThicknessHalf = 2.0 * object.focalLength - sqrt(4.0 * object.focalLength * object.focalLength - object.radius * object.radius);
 	bool lensSlicePart[2] = {true, false};
 	float lensSlicePos = 0.5 * (object.isConverging ? object.thickness : -object.thickness); // Gap Between Slices Of Lens
 	if (object.isConverging) {
-		lensSlicePos += lensThickness / 2.0;
+		lensSlicePos += lensThicknessHalf;
 	}
 	for (int i = 0; i < 2; i++) {
 		sphereSlice slice;
 		slice.pos = object.pos;
 		slice.radius = 2.0 * object.focalLength;
-		slice.sliceSize = lensThickness / 2.0;
+		slice.sliceSize = lensThicknessHalf;
 		slice.is1stSlice = lensSlicePart[i];
 		slice.rotation = object.rotation;
 		slice.materialID = object.materialID;
@@ -461,7 +459,7 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 	}
 	offset += 11*numObjects[3];
-	ray.origin -= vec3(1.0, 1.0, -7.0);
+	ray.origin -= vec3(1.0, 1.06, -7.0);
 	thritorius(ray, hitdist, normal, mat);
 
 	return hitdist;
