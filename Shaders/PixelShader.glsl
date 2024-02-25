@@ -456,6 +456,9 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		object.isConverging = bool(objects[11*i+9+offset]);
 		object.materialID = int(objects[11*i+10+offset])-1;
 		int isOutside = 1;
+		if (!BoundingSphere(ray, object.pos, object.radius * object.radius)) {
+			continue;
+		}
 		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
 	}
 	offset += 11*numObjects[3];
