@@ -411,6 +411,34 @@ bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout materi
 	return false;
 }
 
+float SDF(in vec3 p) {
+	float s1 = length(p) - 2.0;
+	float s2 = length(vec3(p.x, p.y - 2.0, p.z)) - 1.414;
+	float s3 = length(vec3(p.x - 0.5, p.y - 2.5, p.z - 1.0)) - 0.5;
+	float s4 = length(vec3(p.x + 0.5, p.y - 2.5, p.z - 1.0)) - 0.5;
+	return min(min(min(s1, s2), s3), s4);
+}
+
+float RayMarching(in Ray ray, inout float hitdist) {
+	float t = 0.0;
+	vec3 p = vec3(0.0);
+	float heatmap = 0.0;
+	for (int i = 0; i < 256; i++) {
+		heatmap += i;
+		p = fma(ray.dir, vec3(t), ray.origin);
+		float temp_t = abs(SDF(p));
+		if (temp_t > hitdist) {
+			return heatmap;
+		}
+		t += temp_t;
+		if (temp_t < 1e-5) {
+			break;
+		}
+	}
+	hitdist = t;
+	return heatmap;
+}
+
 float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 	// Finds The Ray-Intersection Of Every Object In The Scene
 	float hitdist = 1e6;
@@ -717,6 +745,9 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	// Ray Passes Through The Lens Here
 	TracePathLens(l, ray, forwardDir);
 	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InvSpectraPDF(390.0, 720.0);
+	//float hitdist = 1e5;
+	//float heatmap = RayMarching(ray, hitdist);
+	//color += hitdist;
 
 	return color;
 }
