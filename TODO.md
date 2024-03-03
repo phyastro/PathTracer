@@ -1,5 +1,5 @@
 ### TO DO:
-1. Simply 1/3 As 0.333...
+1. Simplfiy 1/3 As 0.333...
 2. Bounding Box For Ray Marching (RayIntersectAABB)
 3. Over-Relaxation Sphere Tracing For Ray Marching
 4. Add Ray Marching Technique To Path Tracer
