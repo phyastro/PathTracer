@@ -25,6 +25,7 @@ uniform sampler2D screenTexture;
 
 #define MAXDIST 1e5
 #define PI 3.141592653589792623810034526344
+#define ONEBYTHREE 0.3333333
 
 struct Ray {
 	vec3 origin;
@@ -303,16 +304,16 @@ vec2 evalQuartic(in float a, in float b, in float c, in float d, in float e, in 
 bvec3 solveCubic(in float b, in float c, in float d, inout vec3 roots) {
     // https://arxiv.org/abs/1903.10041
     // Solves Cubic Equation By Combining Two Different Methods To Find Real Roots
-    float bdiv3 = b / 3.0;
-    float Q = c / 3.0 - bdiv3 * bdiv3;
+    float bdiv3 = b * ONEBYTHREE;
+    float Q = c * ONEBYTHREE - bdiv3 * bdiv3;
     float R = 0.5 * bdiv3 * c - bdiv3 * bdiv3 * bdiv3 - 0.5 * d;
 	float D = Q * Q * Q + R * R;
 	if (D > 0.0) {
 		// Fix Issue In Calculating Signs Using pow For Cube Root
 		float u = R + sqrt(D);
 		float v = R - sqrt(D);
-		float S = sign(u) * pow(abs(u), 1.0 / 3.0);
-		float T = sign(v) * pow(abs(v), 1.0 / 3.0);
+		float S = sign(u) * pow(abs(u), ONEBYTHREE);
+		float T = sign(v) * pow(abs(v), ONEBYTHREE);
 		roots.x = S + T - bdiv3;
 		// Apply Newton Raphson Method 2 Times To Increase The Accuracy
 		for (int i = 0; i < 2; i++) {
@@ -321,8 +322,9 @@ bvec3 solveCubic(in float b, in float c, in float d, inout vec3 roots) {
 		return bvec3(true, false, false);
 	}
 	float sqrtnegQ = sqrt(-Q);
-	float thetadiv3 = acos(R / (sqrtnegQ * sqrtnegQ * sqrtnegQ)) / 3.0;
-	roots = 2.0 * sqrtnegQ * vec3(cos(thetadiv3), cos(thetadiv3 + 2.0 * PI / 3.0), cos(thetadiv3 + 4.0 * PI / 3.0)) - bdiv3;
+	float thetadiv3 = acos(R / (sqrtnegQ * sqrtnegQ * sqrtnegQ)) * ONEBYTHREE;
+	float TWOPIBYTHREE = fma(2.0, PI, ONEBYTHREE);
+	roots = 2.0 * sqrtnegQ * vec3(cos(thetadiv3), cos(thetadiv3 + TWOPIBYTHREE), cos(fma(2.0, TWOPIBYTHREE, thetadiv3))) - bdiv3;
 	// Apply Newton Raphson Method 2 Times To Increase The Accuracy
 	for (int i = 0; i < 2; i++) {
 		roots -= evalCubic(1.0, b, c, d, roots) / evalQuadratic(3.0, 2.0 * b, c, roots);
