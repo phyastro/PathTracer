@@ -110,6 +110,13 @@ material GetMaterial(in int index) {
 	return material;
 }
 
+void SortMinMax(inout vec3 t1, inout vec3 t2) {
+	vec3 temp_t1 = t1;
+	vec3 temp_t2 = t2;
+	t1 = min(temp_t1, temp_t2);
+	t2 = max(temp_t1, temp_t2);
+}
+
 bool BoundingSphere(in Ray ray, in vec3 pos, in float radius2) {
 	// Bounding Sphere To Check Whether Ray Is Going To Hit The Object
 	// Checks Sign Of Discriminant To Check Sphere Visibility And Removes The Fake Sphere Visible In The Opposite Direction
@@ -120,6 +127,20 @@ bool BoundingSphere(in Ray ray, in vec3 pos, in float radius2) {
 		return false;
 	}
 	if ((b >= 0.0) && (c >= 0.0)) {
+		return false;
+	}
+	return true;
+}
+
+bool RayIntersectAABB(in vec3 origin, in vec3 invdir, in box object) {
+	// Checks Whether The Ray Is Intersecting Given Box
+	vec3 localorigin = origin - object.pos;
+	vec3 tMin = fma(object.size, vec3(-0.5), -localorigin) * invdir;
+	vec3 tMax = fma(object.size, vec3(0.5), -localorigin) * invdir;
+	SortMinMax(tMin, tMax);
+	float t1 = max(max(tMin.x, tMin.y), tMin.z);
+	float t2 = min(min(tMax.x, tMax.y), tMax.z);
+	if ((t1 > t2) || ((t1 < 0.0) && (t2 < 0.0))) {
 		return false;
 	}
 	return true;
@@ -171,13 +192,6 @@ bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout v
 	return false;
 }
 
-void sortMinMax(inout vec3 t1, inout vec3 t2) {
-	vec3 temp_t1 = t1;
-	vec3 temp_t2 = t2;
-	t1 = min(temp_t1, temp_t2);
-	t2 = max(temp_t1, temp_t2);
-}
-
 bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Ray-Intersection Of Box
 	mat3 matrix = RotationMatrix(object.rotation);
@@ -186,12 +200,12 @@ bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 
 	vec3 invdir = 1.0 / ray.dir;
 	vec3 tMin = fma(object.size, vec3(-0.5), -localorigin) * invdir;
 	vec3 tMax = fma(object.size, vec3(0.5), -localorigin) * invdir;
-	sortMinMax(tMin, tMax);
+	SortMinMax(tMin, tMax);
 	float t1 = max(max(tMin.x, tMin.y), tMin.z);
 	float t2 = min(min(tMax.x, tMax.y), tMax.z);
 	float t = (t1 < 0.0) ? t2 : t1;
 	// Ray Didn't Intersect If (tMin.x > tMax.y) || (tMin.x > tMax.z) || (tMin.y > tMax.x) || (tMin.y > tMax.z) || (tMin.z > tMax.x) || (tMin.z > tMax.y)
-	// Or If t Was Negative
+	// Or If t1 And t2 Were Negative
 	if ((t1 > t2) || (t < 1e-4)) {
 		return false;
 	}
@@ -418,7 +432,7 @@ bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout materi
 
 float SDF(in vec3 p) {
 	float s1 = length(p) - 2.0;
-	float s2 = length(vec3(p.x, p.y - 2.0, p.z)) - 1.414;
+	float s2 = length(vec3(p.x, p.y - 2.0, p.z)) - 1.4;
 	float s3 = length(vec3(p.x - 0.5, p.y - 2.5, p.z - 1.0)) - 0.5;
 	float s4 = length(vec3(p.x + 0.5, p.y - 2.5, p.z - 1.0)) - 0.5;
 	return min(min(min(s1, s2), s3), s4);
@@ -428,14 +442,18 @@ float RayMarching(in Ray ray, inout float hitdist) {
 	float t = 0.0;
 	vec3 p = vec3(0.0);
 	float heatmap = 0.0;
+	vec3 invdir = 1.0 / ray.dir;
+	box boundingBox;
+	boundingBox.pos = vec3(0.0, 0.7, 0.0);
+	boundingBox.size = vec3(4.0, 5.4, 4.0);
 	for (int i = 0; i < 256; i++) {
 		heatmap += i;
 		p = fma(ray.dir, vec3(t), ray.origin);
 		float temp_t = abs(SDF(p));
-		if (temp_t > hitdist) {
+		t += temp_t;
+		if (!RayIntersectAABB(p, invdir, boundingBox)) {
 			return heatmap;
 		}
-		t += temp_t;
 		if (temp_t < 1e-5) {
 			break;
 		}
@@ -752,7 +770,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InvSpectraPDF(390.0, 720.0);
 	//float hitdist = 1e5;
 	//float heatmap = RayMarching(ray, hitdist);
-	//color += hitdist;
+	//color += heatmap;
 
 	return color;
 }
