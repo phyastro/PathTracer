@@ -171,32 +171,32 @@ bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout v
 	return false;
 }
 
-// Box Intersection By iq
-// https://www.shadertoy.com/view/ld23DV
-bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout material mat) {
+void sortMinMax(inout vec3 t1, inout vec3 t2) {
+	vec3 temp_t1 = t1;
+	vec3 temp_t2 = t2;
+	t1 = min(temp_t1, temp_t2);
+	t2 = max(temp_t1, temp_t2);
+}
+
+bool BoxIntersection(in vec3 origin, in vec3 dir, in vec3 invdir, in box object, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Ray-Intersection Of Box
-	mat3 matrix = RotationMatrix(object.rotation);
-	vec3 localorigin = (ray.origin - object.pos) * matrix;
-	ray.dir = ray.dir * matrix;
-	vec3 m = 1.0 / ray.dir;
-	vec3 n = m * localorigin;
-	vec3 k = abs(m) * object.size * 0.5;
-	vec3 k1 = -n - k;
-	vec3 k2 = -n + k;
-	float tN = max(k1.x, max(k1.y, k1.z));
-	float tF = min(k2.x, min(k2.y, k2.z));
-	float t1 = min(tN, tF);
-	float t2 = max(tN, tF);
-	float t = 1e6;
-	t = (t1 < 0.0) ? t2 : t1;
-	if ((tN > tF) || (t < 1e-4)) {
+	vec3 localorigin = origin - object.pos;
+	vec3 tMin = fma(object.size, vec3(-0.5), -localorigin) * invdir;
+	vec3 tMax = fma(object.size, vec3(0.5), -localorigin) * invdir;
+	sortMinMax(tMin, tMax);
+	float t1 = max(max(tMin.x, tMin.y), tMin.z);
+	float t2 = min(min(tMax.x, tMax.y), tMax.z);
+	float t = (t1 < 0.0) ? t2 : t1;
+	// Ray Didn't Intersect If (tMin.x > tMax.y) || (tMin.x > tMax.z) || (tMin.y > tMax.x) || (tMin.y > tMax.z) || (tMin.z > tMax.x) || (tMin.z > tMax.y)
+	// Or If t Was Negative
+	if ((t1 > t2) || (t < 1e-4)) {
 		return false;
 	}
 	if (t < hitdist) {
 		hitdist = t;
-		normal = (tN > 0.0) ? step(vec3(tN), k1) : step(k2, vec3(tF));
-		normal *= -sign(ray.dir);
-		normal = matrix * normalize(normal);
+		// The Signed Component Of p Which Has Highest Magnitude Is The Normal
+		vec3 p = abs(localorigin + dir * t);
+		normal = step(max(max(p.x, p.y), p.z), p) * -sign(dir);
 		mat = GetMaterial(object.materialID);
 		return true;
 	}
@@ -472,7 +472,7 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		if (!BoundingSphere(ray, object.pos, 0.25 * dot(object.size, object.size))) {
 			continue;
 		}
-		BoxIntersection(ray, object, hitdist, normal, mat);
+		BoxIntersection(ray.origin, ray.dir, 1.0 / ray.dir, object, hitdist, normal, mat);
 	}
 	offset += 10*numObjects[2];
 	// Iterate Over All The Lenses In The Scene
