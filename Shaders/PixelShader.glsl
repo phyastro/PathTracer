@@ -178,9 +178,12 @@ void sortMinMax(inout vec3 t1, inout vec3 t2) {
 	t2 = max(temp_t1, temp_t2);
 }
 
-bool BoxIntersection(in vec3 origin, in vec3 dir, in vec3 invdir, in box object, inout float hitdist, inout vec3 normal, inout material mat) {
+bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout material mat) {
 	// Ray-Intersection Of Box
-	vec3 localorigin = origin - object.pos;
+	mat3 matrix = RotationMatrix(object.rotation);
+	vec3 localorigin = (ray.origin - object.pos) * matrix;
+	ray.dir *= matrix;
+	vec3 invdir = 1.0 / ray.dir;
 	vec3 tMin = fma(object.size, vec3(-0.5), -localorigin) * invdir;
 	vec3 tMax = fma(object.size, vec3(0.5), -localorigin) * invdir;
 	sortMinMax(tMin, tMax);
@@ -195,8 +198,8 @@ bool BoxIntersection(in vec3 origin, in vec3 dir, in vec3 invdir, in box object,
 	if (t < hitdist) {
 		hitdist = t;
 		// The Signed Component Of p Which Has Highest Magnitude Is The Normal
-		vec3 p = abs(localorigin + dir * t);
-		normal = step(max(max(p.x, p.y), p.z), p) * -sign(dir);
+		vec3 p = abs(localorigin + ray.dir * t);
+		normal = matrix * (step(max(max(p.x, p.y), p.z), p) * -sign(ray.dir));
 		mat = GetMaterial(object.materialID);
 		return true;
 	}
@@ -472,7 +475,7 @@ float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
 		if (!BoundingSphere(ray, object.pos, 0.25 * dot(object.size, object.size))) {
 			continue;
 		}
-		BoxIntersection(ray.origin, ray.dir, 1.0 / ray.dir, object, hitdist, normal, mat);
+		BoxIntersection(ray, object, hitdist, normal, mat);
 	}
 	offset += 10*numObjects[2];
 	// Iterate Over All The Lenses In The Scene
