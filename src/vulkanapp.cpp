@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <limits>
 #include <algorithm>
+#include <fstream>
 
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
@@ -34,6 +35,22 @@ const std::vector<const char*> deviceExtensions = {
 #else
 	const bool isValidationLayersEnabled = false;
 #endif
+
+static std::vector<char> ReadFile(const std::string& filename) {
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open()) {
+		throw std::runtime_error("Failed To Open The File!");
+	}
+
+	size_t fileSize = (size_t)file.tellg();
+	std::vector<char> buffer(fileSize);
+	file.seekg(0);
+	file.read(buffer.data(), fileSize);
+	file.close();
+
+	return buffer;
+}
 
 namespace ManageSDL{
     void SDLHandleEvents(bool& isRunning) {
@@ -521,6 +538,47 @@ private:
 		}
 	}
 
+	VkShaderModule CreateShaderModule(const std::vector<char>& code) {
+		VkShaderModuleCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		createInfo.codeSize = code.size();
+		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+		VkShaderModule shaderModule;
+		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Shader Module!");
+		}
+
+		return shaderModule;
+	}
+
+	void CreateGraphicsPipeline() {
+		auto vertexShaderCode = ReadFile("vertex.spv");
+		auto fragmentShaderCode = ReadFile("fragment.spv");
+
+		VkShaderModule vertexShaderModule = CreateShaderModule(vertexShaderCode);
+		VkShaderModule fragmentShaderModule = CreateShaderModule(fragmentShaderCode);
+
+		VkPipelineShaderStageCreateInfo vertexShaderStageInfo{};
+		vertexShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vertexShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vertexShaderStageInfo.module = vertexShaderModule;
+		vertexShaderStageInfo.pName = "main";
+		vertexShaderStageInfo.pSpecializationInfo = nullptr; // For Specifying Different Constants Instead Of Doing It In Runtime
+
+		VkPipelineShaderStageCreateInfo fragmentShaderStageInfo{};
+		fragmentShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fragmentShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fragmentShaderStageInfo.module = fragmentShaderModule;
+		fragmentShaderStageInfo.pName = "main";
+		fragmentShaderStageInfo.pSpecializationInfo = nullptr; // For Specifying Different Constants Instead Of Doing It In Runtime
+
+		VkPipelineShaderStageCreateInfo shaderStages[] = {vertexShaderStageInfo, fragmentShaderStageInfo};
+
+		vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
+		vkDestroyShaderModule(device, vertexShaderModule, nullptr);
+	}
+
     void InitVulkan() {
         CreateInstance();
 		SetupDebugMessenger();
@@ -529,6 +587,7 @@ private:
 		CreateLogicalDevice();
 		CreateSwapChain();
 		CreateImageViews();
+		CreateGraphicsPipeline();
     }
     
     void MainLoop() {
