@@ -129,6 +129,7 @@ private:
 	VkExtent2D swapChainExtent;
 	std::vector<VkImageView> swapChainImageViews;
 
+	VkRenderPass renderPass;
 	VkPipelineLayout pipelineLayout;
 
     void InitWindow() {
@@ -540,6 +541,39 @@ private:
 		}
 	}
 
+	void CreateRenderPass() {
+		VkAttachmentDescription colorAttachment{};
+		colorAttachment.format = swapChainImageFormat;
+		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear The Framebuffer Before Drawing New Frame
+		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		VkAttachmentReference colorAttachmentRef{};
+		colorAttachmentRef.attachment = 0;
+		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkSubpassDescription subpass{};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1;
+		//subpass.pInputAttachments =  // Attachments That Are Read From A Shader
+		subpass.pColorAttachments = &colorAttachmentRef;
+
+		VkRenderPassCreateInfo renderPassInfo{};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInfo.attachmentCount = 1;
+		renderPassInfo.pAttachments = &colorAttachment;
+		renderPassInfo.subpassCount = 1;
+		renderPassInfo.pSubpasses = &subpass;
+
+		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Render Pass!");
+		}
+	}
+
 	VkShaderModule CreateShaderModule(const std::vector<char>& code) {
 		VkShaderModuleCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -629,7 +663,7 @@ private:
 		dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
 		dynamicState.pDynamicStates = dynamicStates.data();
 
-		// Uniforms
+		// Uniforms And Push Values
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInfo.setLayoutCount = 0;
@@ -653,6 +687,7 @@ private:
 		CreateLogicalDevice();
 		CreateSwapChain();
 		CreateImageViews();
+		CreateRenderPass();
 		CreateGraphicsPipeline();
     }
     
@@ -666,6 +701,7 @@ private:
 
     void CleanUp() {
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyRenderPass(device, renderPass, nullptr);
 		for (VkImageView imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
