@@ -54,13 +54,16 @@ static std::vector<char> ReadFile(const std::string& filename) {
 }
 
 namespace ManageSDL{
-    void SDLHandleEvents(bool& isRunning) {
+    void SDLHandleEvents(bool& isRunning, bool& isFrameBufferResized) {
         SDL_Event event;
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 isRunning = false;
             }
+			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isFrameBufferResized)) {
+				isFrameBufferResized = true;
+			}
         }
     }
 }
@@ -142,12 +145,14 @@ private:
 	std::vector<VkSemaphore> renderFinishedSemaphores;
 	std::vector<VkFence> inFlightFences;
 
+	bool isFrameBufferResized = false;
+
 	uint32_t currentFrame = 0;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
 
-        Uint32 WindowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN;
+        Uint32 WindowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
         window = SDL_CreateWindow("Vulkan App", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, WindowFlags);
     }
 
@@ -854,13 +859,48 @@ private:
 		}
 	}
 
+	void CleanUpSwapChain() {
+		for (VkFramebuffer framebuffer : swapChainFramebuffers) {
+			vkDestroyFramebuffer(device, framebuffer, nullptr);
+		}
+
+		for (VkImageView imageView : swapChainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr);
+		}
+
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
+	}
+
+	void RecreateSwapChain() {
+		SDL_Event event;
+		while ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0) {
+			SDL_WaitEvent(&event);
+		}
+
+		vkDeviceWaitIdle(device);
+
+		CleanUpSwapChain();
+		
+		CreateSwapChain();
+		CreateImageViews();
+		CreateFramebuffers();
+	}
+
 	void DrawFrame() {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 		uint32_t imageIndex;
-		vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+		VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, 
+		imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			RecreateSwapChain();
+			return;
+		} else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)) {
+			throw std::runtime_error("Failed To Acquire Swap Chain Image!");
+		}
+
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		vkResetCommandBuffer(commandBuffers[currentFrame], 0);
 		RecordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
@@ -891,7 +931,14 @@ private:
 		presentInfo.pImageIndices = &imageIndex;
 		presentInfo.pResults = nullptr; // Checking If Presentation Was Successful For Multiple Swap Chains
 
-		vkQueuePresentKHR(presentQueue, &presentInfo);
+		result = vkQueuePresentKHR(presentQueue, &presentInfo);
+
+		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR) || isFrameBufferResized) {
+			isFrameBufferResized = false;
+			RecreateSwapChain();
+		} else if (result != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Present Swap Chain Image!");
+		}
 
 		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
@@ -900,7 +947,7 @@ private:
         bool isRunning = true;
 
         while (isRunning) {
-            ManageSDL::SDLHandleEvents(isRunning);
+            ManageSDL::SDLHandleEvents(isRunning, isFrameBufferResized);
 			DrawFrame();
         }
 
@@ -908,28 +955,27 @@ private:
     }
 
     void CleanUp() {
+		CleanUpSwapChain();
+
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			vkDestroyFence(device, inFlightFences[i], nullptr);
 			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
 			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
 		}
+
 		vkDestroyCommandPool(device, commandPool, nullptr);
-		for (VkFramebuffer framebuffer : swapChainFramebuffers) {
-			vkDestroyFramebuffer(device, framebuffer, nullptr);
-		}
+
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
 		vkDestroyRenderPass(device, renderPass, nullptr);
-		for (VkImageView imageView : swapChainImageViews) {
-			vkDestroyImageView(device, imageView, nullptr);
-		}
-		vkDestroySwapchainKHR(device, swapChain, nullptr);
 
 		vkDestroyDevice(device, nullptr);
 
 		if (isValidationLayersEnabled) {
 			DestoryDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
+
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyInstance(instance, nullptr);
 
