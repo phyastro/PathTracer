@@ -137,6 +137,10 @@ private:
 	VkCommandPool commandPool;
 	VkCommandBuffer commandBuffer;
 
+	VkSemaphore imageAvailableSemaphore;
+	VkSemaphore renderFinishedSemaphore;
+	VkFence inFlightFence;
+
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
 
@@ -751,7 +755,37 @@ private:
 		}
 	}
 
-	void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+	void CreateSyncObjects() {
+		VkSemaphoreCreateInfo semaphoreInfo{};
+		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+		VkFenceCreateInfo fenceInfo{};
+		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+		if ((vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS) || 
+		(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS) || 
+		(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS)) {
+			throw std::runtime_error("Failed To Create Sync Objects!");
+		}
+	}
+
+    void InitVulkan() {
+        CreateInstance();
+		SetupDebugMessenger();
+		CreateSurface();
+		PickPhysicalDevice();
+		CreateLogicalDevice();
+		CreateSwapChain();
+		CreateImageViews();
+		CreateRenderPass();
+		CreateGraphicsPipeline();
+		CreateFramebuffers();
+		CreateCommandPool();
+		CreateCommandBuffer();
+		CreateSyncObjects();
+    }
+
+	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = 0;
@@ -798,30 +832,23 @@ private:
 		}
 	}
 
-    void InitVulkan() {
-        CreateInstance();
-		SetupDebugMessenger();
-		CreateSurface();
-		PickPhysicalDevice();
-		CreateLogicalDevice();
-		CreateSwapChain();
-		CreateImageViews();
-		CreateRenderPass();
-		CreateGraphicsPipeline();
-		CreateFramebuffers();
-		CreateCommandPool();
-		CreateCommandBuffer();
-    }
+	void DrawFrame() {
+
+	}
     
     void MainLoop() {
         bool isRunning = true;
 
         while (isRunning) {
             ManageSDL::SDLHandleEvents(isRunning);
+			DrawFrame();
         }
     }
 
     void CleanUp() {
+		vkDestroyFence(device, inFlightFence, nullptr);
+		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
 		vkDestroyCommandPool(device, commandPool, nullptr);
 		for (VkFramebuffer framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
