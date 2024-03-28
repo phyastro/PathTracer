@@ -16,12 +16,56 @@
 #include <limits>
 #include <algorithm>
 #include <fstream>
+#include <array>
 
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 #define ISDEBUG
+
+struct QueueFamilyIndices {
+	std::optional<uint32_t> graphicsFamily;
+	std::optional<uint32_t> presentFamily;
+
+	bool IsComplete() {
+		return graphicsFamily.has_value() && presentFamily.has_value();
+	}
+};
+
+struct SwapChainSupportDetails {
+	VkSurfaceCapabilitiesKHR capabilities;
+	std::vector<VkSurfaceFormatKHR> formats;
+	std::vector<VkPresentModeKHR> presentModes;
+};
+
+struct Vertex {
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	static VkVertexInputBindingDescription getBindingDescription() {
+		VkVertexInputBindingDescription bindingDescription{};
+		bindingDescription.binding = 0; // Only 1 Vertex Array, So Index Is 0
+		bindingDescription.stride = sizeof(Vertex);
+		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+		return bindingDescription;
+	}
+
+	static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+		std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+		attributeDescriptions[0].binding = 0;
+		attributeDescriptions[0].location = 0; // location Directive In Vertex Shader
+		attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attributeDescriptions[0].offset = offsetof(Vertex, pos);
+		attributeDescriptions[1].binding = 0;
+		attributeDescriptions[1].location = 1; // location Directive In Vertex Shader
+		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+		return attributeDescriptions;
+	}
+};
 
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -37,6 +81,12 @@ const std::vector<const char*> deviceExtensions = {
 	const bool isValidationLayersEnabled = false;
 #endif
 
+const std::vector<Vertex> vertices = {
+	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}}, 
+	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}}, 
+	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
 static std::vector<char> ReadFile(const std::string& filename) {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
@@ -51,21 +101,6 @@ static std::vector<char> ReadFile(const std::string& filename) {
 	file.close();
 
 	return buffer;
-}
-
-namespace ManageSDL{
-    void SDLHandleEvents(bool& isRunning, bool& isFrameBufferResized) {
-        SDL_Event event;
-
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                isRunning = false;
-            }
-			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isFrameBufferResized)) {
-				isFrameBufferResized = true;
-			}
-        }
-    }
 }
 
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, 
@@ -91,20 +126,20 @@ const VkAllocationCallbacks* pAllocator) {
 	}
 }
 
-struct QueueFamilyIndices {
-	std::optional<uint32_t> graphicsFamily;
-	std::optional<uint32_t> presentFamily;
+namespace ManageSDL{
+    void SDLHandleEvents(bool& isRunning, bool& isFrameBufferResized) {
+        SDL_Event event;
 
-	bool IsComplete() {
-		return graphicsFamily.has_value() && presentFamily.has_value();
-	}
-};
-
-struct SwapChainSupportDetails {
-	VkSurfaceCapabilitiesKHR capabilities;
-	std::vector<VkSurfaceFormatKHR> formats;
-	std::vector<VkPresentModeKHR> presentModes;
-};
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                isRunning = false;
+            }
+			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isFrameBufferResized)) {
+				isFrameBufferResized = true;
+			}
+        }
+    }
+}
 
 class VulkanApp {
 public:
@@ -638,12 +673,14 @@ private:
 
 		VkPipelineShaderStageCreateInfo shaderStages[] = {vertexShaderStageInfo, fragmentShaderStageInfo};
 
+		VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
+		std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = Vertex::getAttributeDescriptions();
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vertexInputInfo.vertexBindingDescriptionCount = 0;
-		vertexInputInfo.pVertexBindingDescriptions = nullptr;
-		vertexInputInfo.vertexAttributeDescriptionCount = 0;
-		vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+		vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
 		VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
 		inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
