@@ -20,17 +20,10 @@
 
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
+const bool VSYNC = false;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 #define ISDEBUG
-
-const std::vector<const char*> validationLayers = {
-	"VK_LAYER_KHRONOS_validation"
-};
-
-const std::vector<const char*> deviceExtensions = {
-	VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
 
 #ifdef ISDEBUG
 	const bool isValidationLayersEnabled = true;
@@ -51,6 +44,21 @@ struct SwapChainSupportDetails {
 	VkSurfaceCapabilitiesKHR capabilities;
 	std::vector<VkSurfaceFormatKHR> formats;
 	std::vector<VkPresentModeKHR> presentModes;
+};
+
+struct presentModeName {
+	VkPresentModeKHR mode;
+	const char* name;
+};
+
+const std::vector<presentModeName> presentModes = {
+	{VK_PRESENT_MODE_IMMEDIATE_KHR, "VK_PRESENT_MODE_IMMEDIATE_KHR"}, 
+	{VK_PRESENT_MODE_MAILBOX_KHR, "VK_PRESENT_MODE_MAILBOX_KHR"}, 
+	{VK_PRESENT_MODE_FIFO_KHR, "VK_PRESENT_MODE_FIFO_KHR"}, 
+	{VK_PRESENT_MODE_FIFO_RELAXED_KHR, "VK_PRESENT_MODE_FIFO_RELAXED_KHR"}, 
+	{VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR, "VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR"}, 
+	{VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR, "VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR"}, 
+	{VK_PRESENT_MODE_MAX_ENUM_KHR, "VK_PRESENT_MODE_MAX_ENUM_KHR"}
 };
 
 struct Vertex {
@@ -81,6 +89,14 @@ struct Vertex {
 
 		return attributeDescriptions;
 	}
+};
+
+const std::vector<const char*> validationLayers = {
+	"VK_LAYER_KHRONOS_validation"
+};
+
+const std::vector<const char*> deviceExtensions = {
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 const std::vector<Vertex> vertices = {
@@ -487,15 +503,38 @@ private:
 	}
 
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+		std::vector<presentModeName> availablePresentModesNames;
+		std::cout << "Available Presentation Modes:" << std::endl;
 		for (const VkPresentModeKHR& availablePresentMode : availablePresentModes) {
-			if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-				std::cout << "Using Presentation Mode VK_PRESENT_MODE_MAILBOX_KHR" << std::endl;
-				return availablePresentMode;
+			for (const presentModeName& presentMode : presentModes) {
+				if (availablePresentMode == presentMode.mode) {
+					std::cout << "\t" << presentMode.name << std::endl;
+					availablePresentModesNames.push_back(presentMode);
+					break;
+				}
 			}
 		}
 
-		std::cout << "Using Presentation Mode VK_PRESENT_MODE_FIFO_KHR" << std::endl;
-		return VK_PRESENT_MODE_FIFO_KHR;
+		if (VSYNC) {
+			for (const presentModeName& availablePresentModeName : availablePresentModesNames) {
+				if (availablePresentModeName.mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+					std::cout << "Using Presentation Mode VK_PRESENT_MODE_MAILBOX_KHR" << std::endl;
+					return availablePresentModeName.mode;
+				}
+			}
+
+			std::cout << "Using Presentation Mode VK_PRESENT_MODE_FIFO_KHR" << std::endl;
+			return VK_PRESENT_MODE_FIFO_KHR;
+		} else {
+			for (const presentModeName& availablePresentModeName : availablePresentModesNames) {
+				if (availablePresentModeName.mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+					std::cout << "Using Presentation Mode VK_PRESENT_MODE_IMMEDIATE_KHR" << std::endl;
+					return availablePresentModeName.mode;
+				}
+			}
+
+			throw std::runtime_error("Disabling VSync Is Not Supported!");
+		}
 	}
 
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
