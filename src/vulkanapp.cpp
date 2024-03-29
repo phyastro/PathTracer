@@ -46,6 +46,16 @@ struct SwapChainSupportDetails {
 	std::vector<VkPresentModeKHR> presentModes;
 };
 
+struct colorFormatName {
+	VkFormat format;
+	const char* name;
+};
+
+struct colorSpaceName {
+	VkColorSpaceKHR space;
+	const char* name;
+};
+
 struct presentModeName {
 	VkPresentModeKHR mode;
 	const char* name;
@@ -53,7 +63,6 @@ struct presentModeName {
 
 struct Vertex {
 	glm::vec2 pos;
-	glm::vec3 color;
 
 	static VkVertexInputBindingDescription getBindingDescription() {
 		VkVertexInputBindingDescription bindingDescription{};
@@ -64,20 +73,14 @@ struct Vertex {
 		return bindingDescription;
 	}
 
-	static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
-		std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+	static VkVertexInputAttributeDescription getAttributeDescription() {
+		VkVertexInputAttributeDescription attributeDescription{};
+		attributeDescription.binding = 0;
+		attributeDescription.location = 0; // location Directive In Vertex Shader
+		attributeDescription.format = VK_FORMAT_R32G32_SFLOAT;
+		attributeDescription.offset = offsetof(Vertex, pos);
 
-		attributeDescriptions[0].binding = 0;
-		attributeDescriptions[0].location = 0; // location Directive In Vertex Shader
-		attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-		attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-		attributeDescriptions[1].binding = 0;
-		attributeDescriptions[1].location = 1; // location Directive In Vertex Shader
-		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-		return attributeDescriptions;
+		return attributeDescription;
 	}
 };
 
@@ -87,6 +90,151 @@ const std::vector<const char*> validationLayers = {
 
 const std::vector<const char*> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
+const std::vector<colorFormatName> colorFormats = {
+	{VK_FORMAT_R4G4_UNORM_PACK8, "VK_FORMAT_R4G4_UNORM_PACK8"}, 
+	{VK_FORMAT_R4G4B4A4_UNORM_PACK16, "VK_FORMAT_R4G4B4A4_UNORM_PACK16"}, 
+	{VK_FORMAT_B4G4R4A4_UNORM_PACK16, "VK_FORMAT_B4G4R4A4_UNORM_PACK16"}, 
+	{VK_FORMAT_R5G6B5_UNORM_PACK16, "VK_FORMAT_R5G6B5_UNORM_PACK16"}, 
+	{VK_FORMAT_B5G6R5_UNORM_PACK16, "VK_FORMAT_B5G6R5_UNORM_PACK16"}, 
+	{VK_FORMAT_R5G5B5A1_UNORM_PACK16, "VK_FORMAT_R5G5B5A1_UNORM_PACK16"}, 
+	{VK_FORMAT_B5G5R5A1_UNORM_PACK16, "VK_FORMAT_B5G5R5A1_UNORM_PACK16"}, 
+	{VK_FORMAT_A1R5G5B5_UNORM_PACK16, "VK_FORMAT_A1R5G5B5_UNORM_PACK16"}, 
+	{VK_FORMAT_R8_UNORM, "VK_FORMAT_R8_UNORM"}, 
+	{VK_FORMAT_R8_SNORM, "VK_FORMAT_R8_SNORM"}, 
+	{VK_FORMAT_R8_USCALED, "VK_FORMAT_R8_USCALED"}, 
+	{VK_FORMAT_R8_SSCALED, "VK_FORMAT_R8_SSCALED"}, 
+	{VK_FORMAT_R8_UINT, "VK_FORMAT_R8_UINT"}, 
+	{VK_FORMAT_R8_SINT, "VK_FORMAT_R8_SINT"}, 
+	{VK_FORMAT_R8_SRGB, "VK_FORMAT_R8_SRGB"}, 
+	{VK_FORMAT_R8G8_UNORM, "VK_FORMAT_R8G8_UNORM"}, 
+	{VK_FORMAT_R8G8_SNORM, "VK_FORMAT_R8G8_SNORM"}, 
+	{VK_FORMAT_R8G8_USCALED, "VK_FORMAT_R8G8_USCALED"}, 
+	{VK_FORMAT_R8G8_SSCALED, "VK_FORMAT_R8G8_SSCALED"}, 
+	{VK_FORMAT_R8G8_UINT, "VK_FORMAT_R8G8_UINT"}, 
+	{VK_FORMAT_R8G8_SINT, "VK_FORMAT_R8G8_SINT"}, 
+	{VK_FORMAT_R8G8_SRGB, "VK_FORMAT_R8G8_SRGB"}, 
+	{VK_FORMAT_R8G8B8_UNORM, "VK_FORMAT_R8G8B8_UNORM"}, 
+	{VK_FORMAT_R8G8B8_SNORM, "VK_FORMAT_R8G8B8_SNORM"}, 
+	{VK_FORMAT_R8G8B8_USCALED, "VK_FORMAT_R8G8B8_USCALED"}, 
+	{VK_FORMAT_R8G8B8_SSCALED, "VK_FORMAT_R8G8B8_SSCALED"}, 
+	{VK_FORMAT_R8G8B8_UINT, "VK_FORMAT_R8G8B8_UINT"}, 
+	{VK_FORMAT_R8G8B8_SINT, "VK_FORMAT_R8G8B8_SINT"}, 
+	{VK_FORMAT_R8G8B8_SRGB, "VK_FORMAT_R8G8B8_SRGB"}, 
+	{VK_FORMAT_B8G8R8_UNORM, "VK_FORMAT_B8G8R8_UNORM"}, 
+	{VK_FORMAT_B8G8R8_SNORM, "VK_FORMAT_B8G8R8_SNORM"}, 
+	{VK_FORMAT_B8G8R8_USCALED, "VK_FORMAT_B8G8R8_USCALED"}, 
+	{VK_FORMAT_B8G8R8_SSCALED, "VK_FORMAT_B8G8R8_SSCALED"}, 
+	{VK_FORMAT_B8G8R8_UINT, "VK_FORMAT_B8G8R8_UINT"}, 
+	{VK_FORMAT_B8G8R8_SINT, "VK_FORMAT_B8G8R8_SINT"}, 
+	{VK_FORMAT_B8G8R8_SRGB, "VK_FORMAT_B8G8R8_SRGB"}, 
+	{VK_FORMAT_R8G8B8A8_UNORM, "VK_FORMAT_R8G8B8A8_UNORM"}, 
+	{VK_FORMAT_R8G8B8A8_SNORM, "VK_FORMAT_R8G8B8A8_SNORM"}, 
+	{VK_FORMAT_R8G8B8A8_USCALED, "VK_FORMAT_R8G8B8A8_USCALED"}, 
+	{VK_FORMAT_R8G8B8A8_SSCALED, "VK_FORMAT_R8G8B8A8_SSCALED"}, 
+	{VK_FORMAT_R8G8B8A8_UINT, "VK_FORMAT_R8G8B8A8_UINT"}, 
+	{VK_FORMAT_R8G8B8A8_SINT, "VK_FORMAT_R8G8B8A8_SINT"}, 
+	{VK_FORMAT_R8G8B8A8_SRGB, "VK_FORMAT_R8G8B8A8_SRGB"}, 
+	{VK_FORMAT_B8G8R8A8_UNORM, "VK_FORMAT_B8G8R8A8_UNORM"}, 
+	{VK_FORMAT_B8G8R8A8_SNORM, "VK_FORMAT_B8G8R8A8_SNORM"}, 
+	{VK_FORMAT_B8G8R8A8_USCALED, "VK_FORMAT_B8G8R8A8_USCALED"}, 
+	{VK_FORMAT_B8G8R8A8_SSCALED, "VK_FORMAT_B8G8R8A8_SSCALED"}, 
+	{VK_FORMAT_B8G8R8A8_UINT, "VK_FORMAT_B8G8R8A8_UINT"}, 
+	{VK_FORMAT_B8G8R8A8_SINT, "VK_FORMAT_B8G8R8A8_SINT"}, 
+	{VK_FORMAT_B8G8R8A8_SRGB, "VK_FORMAT_B8G8R8A8_SRGB"}, 
+	{VK_FORMAT_A8B8G8R8_UNORM_PACK32, "VK_FORMAT_A8B8G8R8_UNORM_PACK32"}, 
+	{VK_FORMAT_A8B8G8R8_SNORM_PACK32, "VK_FORMAT_A8B8G8R8_SNORM_PACK32"}, 
+	{VK_FORMAT_A8B8G8R8_USCALED_PACK32, "VK_FORMAT_A8B8G8R8_USCALED_PACK32"}, 
+	{VK_FORMAT_A8B8G8R8_SSCALED_PACK32, "VK_FORMAT_A8B8G8R8_SSCALED_PACK32"}, 
+	{VK_FORMAT_A8B8G8R8_UINT_PACK32, "VK_FORMAT_A8B8G8R8_UINT_PACK32"}, 
+	{VK_FORMAT_A8B8G8R8_SINT_PACK32, "VK_FORMAT_A8B8G8R8_SINT_PACK32"}, 
+	{VK_FORMAT_A8B8G8R8_SRGB_PACK32, "VK_FORMAT_A8B8G8R8_SRGB_PACK32"}, 
+	{VK_FORMAT_A2R10G10B10_UNORM_PACK32, "VK_FORMAT_A2R10G10B10_UNORM_PACK32"}, 
+	{VK_FORMAT_A2R10G10B10_SNORM_PACK32, "VK_FORMAT_A2R10G10B10_SNORM_PACK32"}, 
+	{VK_FORMAT_A2R10G10B10_USCALED_PACK32, "VK_FORMAT_A2R10G10B10_USCALED_PACK32"}, 
+	{VK_FORMAT_A2R10G10B10_SSCALED_PACK32, "VK_FORMAT_A2R10G10B10_SSCALED_PACK32"}, 
+	{VK_FORMAT_A2R10G10B10_UINT_PACK32, "VK_FORMAT_A2R10G10B10_UINT_PACK32"}, 
+	{VK_FORMAT_A2R10G10B10_SINT_PACK32, "VK_FORMAT_A2R10G10B10_SINT_PACK32"}, 
+	{VK_FORMAT_A2B10G10R10_UNORM_PACK32, "VK_FORMAT_A2B10G10R10_UNORM_PACK32"}, 
+	{VK_FORMAT_A2B10G10R10_SNORM_PACK32, "VK_FORMAT_A2B10G10R10_SNORM_PACK32"}, 
+	{VK_FORMAT_A2B10G10R10_USCALED_PACK32, "VK_FORMAT_A2B10G10R10_USCALED_PACK32"}, 
+	{VK_FORMAT_A2B10G10R10_SSCALED_PACK32, "VK_FORMAT_A2B10G10R10_SSCALED_PACK32"}, 
+	{VK_FORMAT_A2B10G10R10_UINT_PACK32, "VK_FORMAT_A2B10G10R10_UINT_PACK32"}, 
+	{VK_FORMAT_A2B10G10R10_SINT_PACK32, "VK_FORMAT_A2B10G10R10_SINT_PACK32"}, 
+	{VK_FORMAT_R16_UNORM, "VK_FORMAT_R16_UNORM"}, 
+	{VK_FORMAT_R16_SNORM, "VK_FORMAT_R16_SNORM"}, 
+	{VK_FORMAT_R16_USCALED, "VK_FORMAT_R16_USCALED"}, 
+	{VK_FORMAT_R16_SSCALED, "VK_FORMAT_R16_SSCALED"}, 
+	{VK_FORMAT_R16_UINT, "VK_FORMAT_R16_UINT"}, 
+	{VK_FORMAT_R16_SINT, "VK_FORMAT_R16_SINT"}, 
+	{VK_FORMAT_R16_SFLOAT, "VK_FORMAT_R16_SFLOAT"}, 
+	{VK_FORMAT_R16G16_UNORM, "VK_FORMAT_R16G16_UNORM"}, 
+	{VK_FORMAT_R16G16_SNORM, "VK_FORMAT_R16G16_SNORM"}, 
+	{VK_FORMAT_R16G16_USCALED, "VK_FORMAT_R16G16_USCALED"}, 
+	{VK_FORMAT_R16G16_SSCALED, "VK_FORMAT_R16G16_SSCALED"}, 
+	{VK_FORMAT_R16G16_UINT, "VK_FORMAT_R16G16_UINT"}, 
+	{VK_FORMAT_R16G16_SINT, "VK_FORMAT_R16G16_SINT"}, 
+	{VK_FORMAT_R16G16_SFLOAT, "VK_FORMAT_R16G16_SFLOAT"}, 
+	{VK_FORMAT_R16G16B16_UNORM, "VK_FORMAT_R16G16B16_UNORM"}, 
+	{VK_FORMAT_R16G16B16_SNORM, "VK_FORMAT_R16G16B16_SNORM"}, 
+	{VK_FORMAT_R16G16B16_USCALED, "VK_FORMAT_R16G16B16_USCALED"}, 
+	{VK_FORMAT_R16G16B16_SSCALED, "VK_FORMAT_R16G16B16_SSCALED"}, 
+	{VK_FORMAT_R16G16B16_UINT, "VK_FORMAT_R16G16B16_UINT"}, 
+	{VK_FORMAT_R16G16B16_SINT, "VK_FORMAT_R16G16B16_SINT"}, 
+	{VK_FORMAT_R16G16B16_SFLOAT, "VK_FORMAT_R16G16B16_SFLOAT"}, 
+	{VK_FORMAT_R16G16B16A16_UNORM, "VK_FORMAT_R16G16B16A16_UNORM"}, 
+	{VK_FORMAT_R16G16B16A16_SNORM, "VK_FORMAT_R16G16B16A16_SNORM"}, 
+	{VK_FORMAT_R16G16B16A16_USCALED, "VK_FORMAT_R16G16B16A16_USCALED"}, 
+	{VK_FORMAT_R16G16B16A16_SSCALED, "VK_FORMAT_R16G16B16A16_SSCALED"}, 
+	{VK_FORMAT_R16G16B16A16_UINT, "VK_FORMAT_R16G16B16A16_UINT"}, 
+	{VK_FORMAT_R16G16B16A16_SINT, "VK_FORMAT_R16G16B16A16_SINT"}, 
+	{VK_FORMAT_R16G16B16A16_SFLOAT, "VK_FORMAT_R16G16B16A16_SFLOAT"}, 
+	{VK_FORMAT_R32_UINT, "VK_FORMAT_R32_UINT"}, 
+	{VK_FORMAT_R32_SINT, "VK_FORMAT_R32_SINT"}, 
+	{VK_FORMAT_R32_SFLOAT, "VK_FORMAT_R32_SFLOAT"}, 
+	{VK_FORMAT_R32G32_UINT, "VK_FORMAT_R32G32_UINT"}, 
+	{VK_FORMAT_R32G32_SINT, "VK_FORMAT_R32G32_SINT"}, 
+	{VK_FORMAT_R32G32_SFLOAT, "VK_FORMAT_R32G32_SFLOAT"}, 
+	{VK_FORMAT_R32G32B32_UINT, "VK_FORMAT_R32G32B32_UINT"}, 
+	{VK_FORMAT_R32G32B32_SINT, "VK_FORMAT_R32G32B32_SINT"}, 
+	{VK_FORMAT_R32G32B32_SFLOAT, "VK_FORMAT_R32G32B32_SFLOAT"}, 
+	{VK_FORMAT_R32G32B32A32_UINT, "VK_FORMAT_R32G32B32A32_UINT"}, 
+	{VK_FORMAT_R32G32B32A32_SINT, "VK_FORMAT_R32G32B32A32_SINT"}, 
+	{VK_FORMAT_R32G32B32A32_SFLOAT, "VK_FORMAT_R32G32B32A32_SFLOAT"}, 
+	{VK_FORMAT_R64_UINT, "VK_FORMAT_R64_UINT"}, 
+	{VK_FORMAT_R64_SINT, "VK_FORMAT_R64_SINT"}, 
+	{VK_FORMAT_R64_SFLOAT, "VK_FORMAT_R64_SFLOAT"}, 
+	{VK_FORMAT_R64G64_UINT, "VK_FORMAT_R64G64_UINT"}, 
+	{VK_FORMAT_R64G64_SINT, "VK_FORMAT_R64G64_SINT"}, 
+	{VK_FORMAT_R64G64_SFLOAT, "VK_FORMAT_R64G64_SFLOAT"}, 
+	{VK_FORMAT_R64G64B64_UINT, "VK_FORMAT_R64G64B64_UINT"}, 
+	{VK_FORMAT_R64G64B64_SINT, "VK_FORMAT_R64G64B64_SINT"}, 
+	{VK_FORMAT_R64G64B64_SFLOAT, "VK_FORMAT_R64G64B64_SFLOAT"}, 
+	{VK_FORMAT_R64G64B64A64_UINT, "VK_FORMAT_R64G64B64A64_UINT"}, 
+	{VK_FORMAT_R64G64B64A64_SINT, "VK_FORMAT_R64G64B64A64_SINT"}, 
+	{VK_FORMAT_R64G64B64A64_SFLOAT, "VK_FORMAT_R64G64B64A64_SFLOAT"}, 
+	{VK_FORMAT_B10G11R11_UFLOAT_PACK32, "VK_FORMAT_B10G11R11_UFLOAT_PACK32"}
+};
+
+const std::vector<colorSpaceName> colorSpaces = {
+	{VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, "VK_COLOR_SPACE_SRGB_NONLINEAR_KHR"}, 
+	{VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT, "VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT"}, 
+	{VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT, "VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT"}, 
+	{VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT, "VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT"}, 
+	{VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT, "VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT"}, 
+	{VK_COLOR_SPACE_BT709_LINEAR_EXT, "VK_COLOR_SPACE_BT709_LINEAR_EXT"}, 
+	{VK_COLOR_SPACE_BT709_NONLINEAR_EXT, "VK_COLOR_SPACE_BT709_NONLINEAR_EXT"}, 
+	{VK_COLOR_SPACE_BT2020_LINEAR_EXT, "VK_COLOR_SPACE_BT2020_LINEAR_EXT"}, 
+	{VK_COLOR_SPACE_HDR10_ST2084_EXT, "VK_COLOR_SPACE_HDR10_ST2084_EXT"}, 
+	{VK_COLOR_SPACE_DOLBYVISION_EXT, "VK_COLOR_SPACE_DOLBYVISION_EXT"}, 
+	{VK_COLOR_SPACE_HDR10_HLG_EXT, "VK_COLOR_SPACE_HDR10_HLG_EXT"}, 
+	{VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT, "VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT"}, 
+	{VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT, "VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT"}, 
+	{VK_COLOR_SPACE_PASS_THROUGH_EXT, "VK_COLOR_SPACE_PASS_THROUGH_EXT"}, 
+	{VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT, "VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT"}, 
+	{VK_COLOR_SPACE_DISPLAY_NATIVE_AMD, "VK_COLOR_SPACE_DISPLAY_NATIVE_AMD"}, 
+	{VK_COLOR_SPACE_MAX_ENUM_KHR, "VK_COLOR_SPACE_MAX_ENUM_KHR"}
 };
 
 const std::vector<presentModeName> presentModes = {
@@ -100,10 +248,10 @@ const std::vector<presentModeName> presentModes = {
 };
 
 const std::vector<Vertex> vertices = {
-	{{-1.0f, -1.0f}, {1.0f, 0.0f, 0.0f}}, 
-	{{1.0f, -1.0f}, {0.0f, 1.0f, 0.0f}}, 
-	{{1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}, 
-	{{-1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}}
+	{{-1.0f, -1.0f}}, 
+	{{1.0f, -1.0f}}, 
+	{{1.0f, 1.0f}}, 
+	{{-1.0f, 1.0f}}
 };
 
 const std::vector<uint16_t> indices = {
@@ -248,8 +396,9 @@ private:
 		std::vector<const char*> extensions(SDLExtensionsCount);
 		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, extensions.data());
 		if (isValidationLayersEnabled) {
-			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); // Require Extension VK_EXT_debug_utils
 		}
+		extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME); // Require Extension VK_EXT_swapchain_colorspace
 		std::cout << "Required Extensions:" << std::endl;
 		for(const char* extensionName : extensions) {
 			std::cout << "\t" << extensionName << std::endl;
@@ -497,16 +646,35 @@ private:
 	}
 
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+		std::cout << "Available Surface Formats:" << std::endl;
 		for (const VkSurfaceFormatKHR& availableFormat : availableFormats) {
-			if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && 
-			availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-				std::cout << "Using VK_FORMAT_B8G8R8A8_SRGB With VK_COLOR_SPACE_SRGB_NONLINEAR_KHR" << std::endl;
-				return availableFormat;
+			for (const colorSpaceName& colorSpace : colorSpaces) {
+				if (availableFormat.colorSpace == colorSpace.space) {
+					for (const colorFormatName& colorFormat : colorFormats) {
+						if (availableFormat.format == colorFormat.format) {
+							std::cout << "\t" << colorFormat.name << ", " << colorSpace.name << std::endl;
+						}
+					}
+				}
 			}
 		}
 
-		std::cout << "Using Available Format With Available Colorspace" << std::endl;
-		return availableFormats[0];
+		VkSurfaceFormatKHR surfaceFormat;
+		for (const VkSurfaceFormatKHR& availableFormat : availableFormats) {
+			if (availableFormat.format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+				surfaceFormat = availableFormat;
+				break;
+			}
+		}
+
+		for (const colorSpaceName& colorSpace : colorSpaces) {
+			if (surfaceFormat.colorSpace == colorSpace.space) {
+				std::cout << "Using VK_FORMAT_R16G16B16A16_SFLOAT Format With " << colorSpace.name << " Color Space" << std::endl;
+				return surfaceFormat;
+			}
+		}
+
+		throw std::runtime_error("Failed To Choose Appropriate Surface Format!");
 	}
 
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
@@ -726,13 +894,13 @@ private:
 		VkPipelineShaderStageCreateInfo shaderStages[] = {vertexShaderStageInfo, fragmentShaderStageInfo};
 
 		VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
-		std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = Vertex::getAttributeDescriptions();
+		VkVertexInputAttributeDescription attributeDescription = Vertex::getAttributeDescription();
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		vertexInputInfo.vertexBindingDescriptionCount = 1;
 		vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-		vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+		vertexInputInfo.vertexAttributeDescriptionCount = 1;
+		vertexInputInfo.pVertexAttributeDescriptions = &attributeDescription;
 
 		VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
 		inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
