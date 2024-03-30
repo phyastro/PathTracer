@@ -92,6 +92,10 @@ const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
 
+const std::vector<const char*> instanceExtensions = {
+	VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME
+};
+
 const std::vector<const char*> deviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
@@ -404,18 +408,34 @@ private:
 		return true;
 	}
 
-	std::vector<const char*> GetRequiredExtensions() {
+	void AvailableInstanceExtensions() {
+		uint32_t availableExtensionsCount = 0;
+		vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, nullptr);
+		std::vector<VkExtensionProperties> availableExtensions(availableExtensionsCount);
+		vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, availableExtensions.data());
+
+		std::cout << "Available Instance Extensions:" << std::endl;
+		for(const VkExtensionProperties &extension : availableExtensions) {
+			std::cout << "\t" << extension.extensionName << std::endl;
+		}
+	}
+
+	std::vector<const char*> GetRequiredInstanceExtensions() {
 		uint32_t SDLExtensionsCount = 0;
 		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, nullptr);
 		std::vector<const char*> extensions(SDLExtensionsCount);
 		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, extensions.data());
+
 		if (isValidationLayersEnabled) {
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); // Require Extension VK_EXT_debug_utils
 		}
-		extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME); // Require Extension VK_EXT_swapchain_colorspace
-		std::cout << "Required Extensions:" << std::endl;
-		for(const char* extensionName : extensions) {
-			std::cout << "\t" << extensionName << std::endl;
+		for (const char* instanceExtension : instanceExtensions) {
+			extensions.push_back(instanceExtension);
+		}
+
+		std::cout << "Required Instance Extensions:" << std::endl;
+		for(const char* extension : extensions) {
+			std::cout << "\t" << extension << std::endl;
 		}
 
 		return extensions;
@@ -438,16 +458,9 @@ private:
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		createInfo.pApplicationInfo = &appInfo;
 
-		uint32_t availableExtensionsCount = 0;
-		vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, nullptr);
-		std::vector<VkExtensionProperties> availableExtensions(availableExtensionsCount);
-		vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, availableExtensions.data());
-		std::cout << "Available Extensions:" << std::endl;
-		for(const VkExtensionProperties &extension : availableExtensions) {
-			std::cout << "\t" << extension.extensionName << std::endl;
-		}
+		AvailableInstanceExtensions();
 
-		std::vector<const char*> extensions = GetRequiredExtensions();
+		std::vector<const char*> extensions = GetRequiredInstanceExtensions();
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 		createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -550,6 +563,16 @@ private:
 		vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
 		std::vector<VkExtensionProperties> availableExtensions(extensionCount);
 		vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+		std::cout << "Available Device Extensions:" << std::endl;
+		for (const VkExtensionProperties& availableExtension : availableExtensions) {
+			std::cout << "\t" << availableExtension.extensionName << std::endl;
+		}
+
+		std::cout << "Required Device Extensions:" << std::endl;
+		for (const char* deviceExtension : deviceExtensions) {
+			std::cout << "\t" << deviceExtension << std::endl;
+		}
 
 		std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
 		for (const VkExtensionProperties& extension : availableExtensions) {
