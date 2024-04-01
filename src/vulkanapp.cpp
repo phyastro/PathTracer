@@ -16,7 +16,6 @@
 #include <limits>
 #include <algorithm>
 #include <fstream>
-#include <array>
 
 const unsigned int WIDTH = 800;
 const unsigned int HEIGHT = 600;
@@ -85,7 +84,11 @@ struct Vertex {
 };
 
 struct UniformBufferObject {
-	alignas(16) glm::vec2 resolution;
+	alignas(16) glm::vec4 dummy[25];
+};
+
+struct PushConstantValues {
+	glm::vec2 resolution;
 };
 
 const std::vector<const char*> validationLayers = {
@@ -365,9 +368,12 @@ private:
 	std::vector<VkBuffer> uniformBuffers;
 	std::vector<VkDeviceMemory> uniformBuffersMemory;
 	std::vector<void*> uniformBuffersMapped;
+	std::vector<UniformBufferObject> dummyUniform;
 
 	VkDescriptorPool descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
+
+	std::vector<PushConstantValues> pushConstants;
 
 	std::vector<VkCommandBuffer> commandBuffers;
 
@@ -1002,13 +1008,19 @@ private:
 		dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
 		dynamicState.pDynamicStates = dynamicStates.data();
 
+		VkPushConstantRange pushConstant{};
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(PushConstantValues);
+		pushConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		pushConstants.resize(MAX_FRAMES_IN_FLIGHT);
+
 		// Uniforms And Push Values
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInfo.setLayoutCount = 1;
 		pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-		pipelineLayoutInfo.pushConstantRangeCount = 0;
-		pipelineLayoutInfo.pPushConstantRanges = nullptr;
+		pipelineLayoutInfo.pushConstantRangeCount = 1;
+		pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
 
 		if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Pipeline Layout!");
@@ -1202,6 +1214,7 @@ private:
 		uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 		uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
 		uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+		dummyUniform.resize(MAX_FRAMES_IN_FLIGHT);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
@@ -1365,6 +1378,10 @@ private:
 
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, 
 		pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+		pushConstants[currentFrame].resolution = glm::vec2(W, H);
+		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstants[currentFrame]), &pushConstants[currentFrame]);
+
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 		vkCmdEndRenderPass(commandBuffer);
@@ -1402,10 +1419,11 @@ private:
 	}
 
 	void UpdateUniformBuffer(uint32_t currentImage) {
-		UniformBufferObject ubo{};
-		ubo.resolution = glm::vec2(W, H);
+		for (int i = 0; i < 25; i++) {
+			dummyUniform[currentFrame].dummy[i] = glm::vec4(glm::ivec4(4*i+1, 4*i+2, 4*i+3, 4*i+4)) * 0.01f;
+		}
 
-		memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+		memcpy(uniformBuffersMapped[currentImage], &dummyUniform[currentFrame], sizeof(dummyUniform[currentFrame]));
 	}
 
 	void DrawFrame() {
