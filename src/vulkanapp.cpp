@@ -18,8 +18,8 @@
 #include <fstream>
 #include <array>
 
-const unsigned int WIDTH = 800;
-const unsigned int HEIGHT = 600;
+const unsigned int WIDTH = 1280;
+const unsigned int HEIGHT = 720;
 const bool VSYNC = false;
 
 #define ISDEBUG
@@ -60,16 +60,6 @@ struct presentModeName {
 	const char* name;
 };
 
-struct PipelineLayout {
-	VkPipelineLayout renderer;
-	VkPipelineLayout processor;
-};
-
-struct Pipeline {
-	VkPipeline renderer;
-	VkPipeline processor;
-};
-
 struct Vertex {
 	glm::vec2 pos;
 
@@ -97,11 +87,7 @@ struct UniformBufferObject {
 	alignas(16) glm::vec4 dummy[25];
 };
 
-struct RendererPushConstantValues {
-	glm::vec2 resolution;
-};
-
-struct ProcessorPushConstantValues {
+struct PushConstantValues {
 	glm::vec2 resolution;
 };
 
@@ -369,8 +355,8 @@ private:
 
 	VkDescriptorSetLayout descriptorSetLayout;
 	std::vector<VkShaderModule> shaderModules;
-	PipelineLayout pipelineLayouts;
-	Pipeline pipelines;
+	VkPipelineLayout pipelineLayout;
+	VkPipeline pipeline;
 
 	VkCommandPool commandPool;
 
@@ -387,13 +373,16 @@ private:
 	VkImage rendererImage;
 	VkDeviceMemory rendererImageMemory;
 	VkImageView rendererImageView;
-	VkSampler rendererImageSampler;
+
+	VkImage storageImage;
+	VkDeviceMemory storageImageMemory;
+	VkImageView storageImageView;
+	VkSampler storageImageSampler;
 
 	VkDescriptorPool descriptorPool;
 	VkDescriptorSet descriptorSet;
 
-	RendererPushConstantValues rendererPushConstant;
-	ProcessorPushConstantValues ProcessorPushConstant;
+	PushConstantValues pushConstant;
 
 	VkCommandBuffer commandBuffer;
 
@@ -808,7 +797,7 @@ private:
 		VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
 		VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
-		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 2;
 		if ((swapChainSupport.capabilities.maxImageCount > 0) && (imageCount > swapChainSupport.capabilities.maxImageCount)) {
 			imageCount = swapChainSupport.capabilities.maxImageCount;
 		}
@@ -856,7 +845,7 @@ private:
 		swapChainExtent = extent;
 	}
 
-	void CreateImageViews() {
+	void CreateSwapChainImageViews() {
 		VkImageViewCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -922,18 +911,6 @@ private:
 		return shaderModule;
 	}
 
-	VkPipelineLayoutCreateInfo CreatePipelineLayoutInfo(VkDescriptorSetLayout &descriptorSetLayout, VkPushConstantRange &pushConstant) {
-		// Uniforms And Push Values
-		VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInfo.setLayoutCount = 1;
-		pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-		pipelineLayoutInfo.pushConstantRangeCount = 1;
-		pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
-
-		return pipelineLayoutInfo;
-	}
-
 	VkPipelineShaderStageCreateInfo CreateShaderStageInfo(VkShaderModule module, VkShaderStageFlagBits stage, const char* pName) {
 		shaderModules.push_back(module);
 
@@ -948,27 +925,10 @@ private:
 	}
 
 	void CreateGraphicsPipeline() {
-		VkPushConstantRange rendererPushConstantRange{};
-		rendererPushConstantRange.offset = 0;
-		rendererPushConstantRange.size = sizeof(RendererPushConstantValues);
-		rendererPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		VkPipelineLayoutCreateInfo rendererPipelineLayoutInfo = CreatePipelineLayoutInfo(descriptorSetLayout, rendererPushConstantRange);
-		if (vkCreatePipelineLayout(device, &rendererPipelineLayoutInfo, nullptr, &pipelineLayouts.renderer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Rendering Pipeline Layout!");
-		}
-
-		VkPushConstantRange processorPushConstantRange{};
-		processorPushConstantRange.offset = 0;
-		processorPushConstantRange.size = sizeof(ProcessorPushConstantValues);
-		processorPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		VkPipelineLayoutCreateInfo processorPipelineLayoutInfo = CreatePipelineLayoutInfo(descriptorSetLayout, processorPushConstantRange);
-		if (vkCreatePipelineLayout(device, &processorPipelineLayoutInfo, nullptr, &pipelineLayouts.processor) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Processing Pipeline Layout!");
-		}
-
 		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+
+		shaderStages[0] = CreateShaderStageInfo(CreateShaderModule(ReadFile("vertex.spv")), VK_SHADER_STAGE_VERTEX_BIT, "main");
+		shaderStages[1] = CreateShaderStageInfo(CreateShaderModule(ReadFile("fragment.spv")), VK_SHADER_STAGE_FRAGMENT_BIT, "main");
 
 		VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
 		VkVertexInputAttributeDescription attributeDescription = Vertex::getAttributeDescription();
@@ -1004,16 +964,19 @@ private:
 		multisampling.sampleShadingEnable = VK_FALSE;
 		multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-		VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-		colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
-			VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-		colorBlendAttachment.blendEnable = VK_FALSE;
+		std::array<VkPipelineColorBlendAttachmentState, 2> colorBlendAttachments{};
+		colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
+		VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		colorBlendAttachments[0].blendEnable = VK_FALSE;
+		colorBlendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
+		VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		colorBlendAttachments[1].blendEnable = VK_FALSE;
 
 		VkPipelineColorBlendStateCreateInfo colorBlending{};
 		colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBlending.logicOpEnable = VK_FALSE;
-		colorBlending.attachmentCount = 1;
-		colorBlending.pAttachments = &colorBlendAttachment;
+		colorBlending.attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size());
+		colorBlending.pAttachments = colorBlendAttachments.data();
 
 		std::vector<VkDynamicState> dynamicStates = {
 			VK_DYNAMIC_STATE_VIEWPORT, 
@@ -1024,10 +987,31 @@ private:
 		dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
 		dynamicState.pDynamicStates = dynamicStates.data();
 
+		std::array<VkFormat, 2> colorAttachmentFormats{};
+		colorAttachmentFormats[0] = swapChainImageFormat;
+		colorAttachmentFormats[1] = swapChainImageFormat;
+
 		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-		pipelineRenderingCreateInfo.colorAttachmentCount = 1;
-		pipelineRenderingCreateInfo.pColorAttachmentFormats = &swapChainImageFormat;
+		pipelineRenderingCreateInfo.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size());
+		pipelineRenderingCreateInfo.pColorAttachmentFormats = colorAttachmentFormats.data();
+
+		VkPushConstantRange pushConstantRange{};
+		pushConstantRange.offset = 0;
+		pushConstantRange.size = sizeof(PushConstantValues);
+		pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+		// Uniforms And Push Values
+		VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInfo.setLayoutCount = 1;
+		pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+		pipelineLayoutInfo.pushConstantRangeCount = 1;
+		pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+		if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Pipeline Layout!");
+		}
 
 		VkGraphicsPipelineCreateInfo pipelineInfo{};
 		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1043,21 +1027,10 @@ private:
 		pipelineInfo.pColorBlendState = &colorBlending;
 		pipelineInfo.pDynamicState = &dynamicState;
 		pipelineInfo.renderPass = nullptr;
+		pipelineInfo.layout = pipelineLayout;
 
-		shaderStages[0] = CreateShaderStageInfo(CreateShaderModule(ReadFile("vertex.spv")), VK_SHADER_STAGE_VERTEX_BIT, "main");
-		shaderStages[1] = CreateShaderStageInfo(CreateShaderModule(ReadFile("renderer.spv")), VK_SHADER_STAGE_FRAGMENT_BIT, "main");
-		pipelineInfo.layout = pipelineLayouts.renderer;
-
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipelines.renderer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Rendering Graphics Pipeline!");
-		}
-
-		shaderStages[0] = CreateShaderStageInfo(CreateShaderModule(ReadFile("vertex.spv")), VK_SHADER_STAGE_VERTEX_BIT, "main");
-		shaderStages[1] = CreateShaderStageInfo(CreateShaderModule(ReadFile("processor.spv")), VK_SHADER_STAGE_FRAGMENT_BIT, "main");
-		pipelineInfo.layout = pipelineLayouts.processor;
-
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipelines.processor) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Processing Graphics Pipeline!");
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Graphics Pipeline!");
 		}
 
 		for (VkShaderModule shaderModule : shaderModules) {
@@ -1211,43 +1184,74 @@ private:
 		vkMapMemory(device, uniformBufferMemory, 0, bufferSize, 0, &uniformBufferMapped);
 	}
 
-	void CreateRendererImage() {
-		VkImageCreateInfo createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		createInfo.imageType = VK_IMAGE_TYPE_2D;
-		createInfo.extent.width = swapChainExtent.width;
-		createInfo.extent.height = swapChainExtent.height;
-		createInfo.extent.depth = 1;
-		createInfo.mipLevels = 1;
-		createInfo.arrayLayers = 1;
-		createInfo.format = swapChainImageFormat;
-		createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-		createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		createInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		createInfo.flags = 0;
+	void CreateImages() {
+		std::array<VkImageCreateInfo, 2> createInfo{};
+		std::array<VkMemoryRequirements, 2> memoryRequirements;
+		std::array<VkMemoryAllocateInfo, 2> allocateInfo{};
 
-		if (vkCreateImage(device, &createInfo, nullptr, &rendererImage) != VK_SUCCESS) {
+		createInfo[0].sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		createInfo[0].imageType = VK_IMAGE_TYPE_2D;
+		createInfo[0].extent.width = swapChainExtent.width;
+		createInfo[0].extent.height = swapChainExtent.height;
+		createInfo[0].extent.depth = 1;
+		createInfo[0].mipLevels = 1;
+		createInfo[0].arrayLayers = 1;
+		createInfo[0].format = swapChainImageFormat;
+		createInfo[0].tiling = VK_IMAGE_TILING_OPTIMAL;
+		createInfo[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		createInfo[0].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		createInfo[0].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		createInfo[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		createInfo[0].flags = 0;
+
+		if (vkCreateImage(device, &createInfo[0], nullptr, &rendererImage) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Renderer Image!");
 		}
 
-		VkMemoryRequirements memoryRequirements;
-		vkGetImageMemoryRequirements(device, rendererImage, &memoryRequirements);
+		createInfo[1].sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		createInfo[1].imageType = VK_IMAGE_TYPE_2D;
+		createInfo[1].extent.width = swapChainExtent.width;
+		createInfo[1].extent.height = swapChainExtent.height;
+		createInfo[1].extent.depth = 1;
+		createInfo[1].mipLevels = 1;
+		createInfo[1].arrayLayers = 1;
+		createInfo[1].format = swapChainImageFormat;
+		createInfo[1].tiling = VK_IMAGE_TILING_OPTIMAL;
+		createInfo[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		createInfo[1].usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		createInfo[1].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		createInfo[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		createInfo[1].flags = 0;
 
-		VkMemoryAllocateInfo allocateInfo{};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = FindMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		if (vkCreateImage(device, &createInfo[1], nullptr, &storageImage) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Storage Image!");
+		}
 
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &rendererImageMemory) != VK_SUCCESS) {
+		vkGetImageMemoryRequirements(device, rendererImage, &memoryRequirements[0]);
+
+		allocateInfo[0].sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo[0].allocationSize = memoryRequirements[0].size;
+		allocateInfo[0].memoryTypeIndex = FindMemoryType(memoryRequirements[0].memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		if (vkAllocateMemory(device, &allocateInfo[0], nullptr, &rendererImageMemory) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Allocate Renderer Image Memory!");
 		}
 
+		vkGetImageMemoryRequirements(device, storageImage, &memoryRequirements[1]);
+
+		allocateInfo[1].sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo[1].allocationSize = memoryRequirements[1].size;
+		allocateInfo[1].memoryTypeIndex = FindMemoryType(memoryRequirements[1].memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		if (vkAllocateMemory(device, &allocateInfo[1], nullptr, &storageImageMemory) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Allocate Storage Image Memory!");
+		}
+
 		vkBindImageMemory(device, rendererImage, rendererImageMemory, 0);
+		vkBindImageMemory(device, storageImage, storageImageMemory, 0);
 	}
 
-	void CreateRendererImageView() {
+	void CreateImageViews() {
 		VkImageViewCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -1256,25 +1260,32 @@ private:
 		createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-		createInfo.image = rendererImage;
 		createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		createInfo.subresourceRange.baseMipLevel = 0;
 		createInfo.subresourceRange.levelCount = 1;
 		createInfo.subresourceRange.baseArrayLayer = 0;
 		createInfo.subresourceRange.layerCount = 1;
 
+		createInfo.image = rendererImage;
+
 		if (vkCreateImageView(device, &createInfo, nullptr, &rendererImageView) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Renderer Image View!");
 		}
+
+		createInfo.image = storageImage;
+
+		if (vkCreateImageView(device, &createInfo, nullptr, &storageImageView) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Storage Image View!");
+		}
 	}
 
-	void CreateRendererImageSampler() {
+	void CreateStorageImageSampler() {
 		VkSamplerCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		createInfo.magFilter = VK_FILTER_NEAREST;
 		createInfo.minFilter = VK_FILTER_NEAREST;
 
-		if (vkCreateSampler(device, &createInfo, nullptr, &rendererImageSampler) != VK_SUCCESS) {
+		if (vkCreateSampler(device, &createInfo, nullptr, &storageImageSampler) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Renderer Image Sampler!");
 		}
 	}
@@ -1319,8 +1330,8 @@ private:
 
 		VkDescriptorImageInfo imageInfo{};
 		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageInfo.imageView = rendererImageView;
-		imageInfo.sampler = rendererImageSampler;
+		imageInfo.imageView = storageImageView;
+		imageInfo.sampler = storageImageSampler;
 
 		descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite[1].dstSet = descriptorSet;
@@ -1383,16 +1394,16 @@ private:
 		PickPhysicalDevice();
 		CreateLogicalDevice();
 		CreateSwapChain();
-		CreateImageViews();
+		CreateSwapChainImageViews();
 		CreateDescriptorSetLayout();
 		CreateGraphicsPipeline();
 		CreateCommandPool();
 		CreateVertexBuffer();
 		CreateIndexBuffer();
 		CreateUniformBuffer();
-		CreateRendererImage();
-		CreateRendererImageView();
-		CreateRendererImageSampler();
+		CreateImages();
+		CreateImageViews();
+		CreateStorageImageSampler();
 		CreateDescriptorPool();
 		CreateDescriptorSet();
 		CreateCommandBuffer();
@@ -1409,16 +1420,34 @@ private:
 			throw std::runtime_error("Failed To Begin Recording Command Buffer!");
 		}
 
-		VkImageMemoryBarrier imageMemoryBarrierRender{};
-		imageMemoryBarrierRender.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierRender.srcAccessMask = 0;
-		imageMemoryBarrierRender.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierRender.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrierRender.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierRender.image = rendererImage;
-		imageMemoryBarrierRender.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+		std::array<VkImageMemoryBarrier, 3> imageMemoryBarrierRender{};
 
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierRender);
+		imageMemoryBarrierRender[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierRender[0].srcAccessMask = 0;
+		imageMemoryBarrierRender[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		imageMemoryBarrierRender[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		imageMemoryBarrierRender[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		imageMemoryBarrierRender[0].image = rendererImage;
+		imageMemoryBarrierRender[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+		imageMemoryBarrierRender[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierRender[1].srcAccessMask = 0;
+		imageMemoryBarrierRender[1].dstAccessMask = 0;
+		imageMemoryBarrierRender[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		imageMemoryBarrierRender[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageMemoryBarrierRender[1].image = storageImage;
+		imageMemoryBarrierRender[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+		imageMemoryBarrierRender[2].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierRender[2].srcAccessMask = 0;
+		imageMemoryBarrierRender[2].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		imageMemoryBarrierRender[2].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		imageMemoryBarrierRender[2].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		imageMemoryBarrierRender[2].image = swapChainImages[imageIndex];
+		imageMemoryBarrierRender[2].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
+		0, 0,  nullptr, 0, nullptr, static_cast<uint32_t>(imageMemoryBarrierRender.size()), imageMemoryBarrierRender.data());
 
 		VkViewport viewport{};
 		viewport.x = 0.0f;
@@ -1440,85 +1469,82 @@ private:
 
 		vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-		VkRenderingAttachmentInfo colorAttachmentInfo{};
-		colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-		colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
-		colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		std::array<VkRenderingAttachmentInfo, 2> colorAttachmentInfo{};
 		VkClearValue clearValue = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-		colorAttachmentInfo.clearValue = clearValue;
+
+		colorAttachmentInfo[0].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+		colorAttachmentInfo[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colorAttachmentInfo[0].imageView = rendererImageView;
+		colorAttachmentInfo[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachmentInfo[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachmentInfo[0].clearValue = clearValue;
+
+		colorAttachmentInfo[1].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+		colorAttachmentInfo[1].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colorAttachmentInfo[1].imageView = swapChainImageViews[imageIndex];
+		colorAttachmentInfo[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachmentInfo[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachmentInfo[1].clearValue = clearValue;
 
 		VkRenderingInfo renderingInfo{};
 		renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
 		renderingInfo.renderArea.offset = {0, 0};
 		renderingInfo.renderArea.extent = swapChainExtent;
 		renderingInfo.layerCount = 1;
-		renderingInfo.colorAttachmentCount = 1;
-		renderingInfo.pColorAttachments = &colorAttachmentInfo;
+		renderingInfo.colorAttachmentCount = 2;
+		renderingInfo.pColorAttachments = colorAttachmentInfo.data();
 		renderingInfo.flags = 0;
 
-		colorAttachmentInfo.imageView = rendererImageView;
-
 		vkCmdBeginRendering(commandBuffer, &renderingInfo);
 
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.renderer);
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, 
-		pipelineLayouts.renderer, 0, 1, &descriptorSet, 0, nullptr);
+		pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-		vkCmdPushConstants(commandBuffer, pipelineLayouts.renderer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(rendererPushConstant), &rendererPushConstant);
+		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstant), &pushConstant);
 
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 		vkCmdEndRendering(commandBuffer);
 
-		VkImageMemoryBarrier imageMemoryBarrierRenderProcess{};
-		imageMemoryBarrierRenderProcess.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierRenderProcess.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierRenderProcess.dstAccessMask = 0;
-		imageMemoryBarrierRenderProcess.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierRenderProcess.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageMemoryBarrierRenderProcess.image = rendererImage;
-		imageMemoryBarrierRenderProcess.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+		std::array<VkImageMemoryBarrier, 3> imageMemoryBarrierTransferPresent{};
 
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierRenderProcess);
+		imageMemoryBarrierTransferPresent[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierTransferPresent[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		imageMemoryBarrierTransferPresent[0].dstAccessMask = 0;
+		imageMemoryBarrierTransferPresent[0].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		imageMemoryBarrierTransferPresent[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		imageMemoryBarrierTransferPresent[0].image = rendererImage;
+		imageMemoryBarrierTransferPresent[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-		VkImageMemoryBarrier imageMemoryBarrierProcess{};
-		imageMemoryBarrierProcess.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierProcess.srcAccessMask = 0;
-		imageMemoryBarrierProcess.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierProcess.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrierProcess.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierProcess.image = swapChainImages[imageIndex];
-		imageMemoryBarrierProcess.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+		imageMemoryBarrierTransferPresent[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierTransferPresent[1].srcAccessMask = 0;
+		imageMemoryBarrierTransferPresent[1].dstAccessMask = 0;
+		imageMemoryBarrierTransferPresent[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageMemoryBarrierTransferPresent[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		imageMemoryBarrierTransferPresent[1].image = storageImage;
+		imageMemoryBarrierTransferPresent[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierProcess);
+		imageMemoryBarrierTransferPresent[2].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierTransferPresent[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		imageMemoryBarrierTransferPresent[2].dstAccessMask = 0;
+		imageMemoryBarrierTransferPresent[2].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		imageMemoryBarrierTransferPresent[2].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		imageMemoryBarrierTransferPresent[2].image = swapChainImages[imageIndex];
+		imageMemoryBarrierTransferPresent[2].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-		colorAttachmentInfo.imageView = swapChainImageViews[imageIndex];
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
+		0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(imageMemoryBarrierTransferPresent.size()), imageMemoryBarrierTransferPresent.data());
 
-		vkCmdBeginRendering(commandBuffer, &renderingInfo);
+		VkImageCopy region{};
+		region.extent = {swapChainExtent.width, swapChainExtent.height, 1};
+		region.srcOffset = {0, 0, 0};
+		region.dstOffset = {0, 0, 0};
+		region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+		region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
 
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.processor);
-
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, 
-		pipelineLayouts.processor, 0, 1, &descriptorSet, 0, nullptr);
-
-		vkCmdPushConstants(commandBuffer, pipelineLayouts.processor, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ProcessorPushConstant), &ProcessorPushConstant);
-
-		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
-		vkCmdEndRendering(commandBuffer);
-
-		VkImageMemoryBarrier imageMemoryBarrierPresent{};
-		imageMemoryBarrierPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierPresent.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierPresent.dstAccessMask = 0;
-		imageMemoryBarrierPresent.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		imageMemoryBarrierPresent.image = swapChainImages[imageIndex];
-		imageMemoryBarrierPresent.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierPresent);
+		vkCmdCopyImage(commandBuffer, rendererImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, storageImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
 		if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Record Command Buffer!");
@@ -1532,6 +1558,9 @@ private:
 
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 
+		vkDestroyImageView(device, storageImageView, nullptr);
+		vkDestroyImage(device, storageImage, nullptr);
+		vkFreeMemory(device, storageImageMemory, nullptr);
 		vkDestroyImageView(device, rendererImageView, nullptr);
 		vkDestroyImage(device, rendererImage, nullptr);
 		vkFreeMemory(device, rendererImageMemory, nullptr);
@@ -1548,10 +1577,10 @@ private:
 		CleanUpImages();
 
 		CreateSwapChain();
-		CreateImageViews();
+		CreateSwapChainImageViews();
 
-		CreateRendererImage();
-		CreateRendererImageView();
+		CreateImages();
+		CreateImageViews();
 		UpdateDescriptorSet();
 	}
 
@@ -1563,8 +1592,8 @@ private:
 		memcpy(uniformBufferMapped, &dummyUniform, sizeof(dummyUniform));
 	}
 
-	void UpdatePushConstants() {
-		rendererPushConstant.resolution = glm::vec2(W, H);
+	void UpdatePushConstant() {
+		pushConstant.resolution = glm::vec2(W, H);
 	}
 
 	void DrawFrame() {
@@ -1582,7 +1611,7 @@ private:
 		}
 
 		UpdateUniformBuffer();
-		UpdatePushConstants();
+		UpdatePushConstant();
 
 		vkResetFences(device, 1, &inFlightFence);
 		vkResetCommandBuffer(commandBuffer, 0);
@@ -1639,7 +1668,7 @@ private:
     void CleanUp() {
 		CleanUpImages();
 
-		vkDestroySampler(device, rendererImageSampler, nullptr);
+		vkDestroySampler(device, storageImageSampler, nullptr);
 
 		vkDestroyBuffer(device, uniformBuffer, nullptr);
 		vkFreeMemory(device, uniformBufferMemory, nullptr);
@@ -1660,10 +1689,8 @@ private:
 
 		vkDestroyCommandPool(device, commandPool, nullptr);
 
-		vkDestroyPipeline(device, pipelines.processor, nullptr);
-		vkDestroyPipeline(device, pipelines.renderer, nullptr);
-		vkDestroyPipelineLayout(device, pipelineLayouts.processor, nullptr);
-		vkDestroyPipelineLayout(device, pipelineLayouts.renderer, nullptr);
+		vkDestroyPipeline(device, pipeline, nullptr);
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 
 		vkDestroyDevice(device, nullptr);
 
