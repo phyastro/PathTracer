@@ -380,6 +380,7 @@ private:
 	VkImage storageImage;
 	VkDeviceMemory storageImageMemory;
 	VkImageView storageImageView;
+	VkSampler storageImageSampler;
 
 	VkDescriptorPool descriptorPool;
 	VkDescriptorSet descriptorSet;
@@ -867,9 +868,8 @@ private:
 	}
 
 	void CreateRenderPass() {
-		std::array<VkAttachmentDescription, 3> colorAttachments{};
+		std::array<VkAttachmentDescription, 2> colorAttachments{};
 		std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
-		VkAttachmentReference inputAttachmentRef{};
 		VkSubpassDescription subpass{};
 		VkSubpassDependency dependency{};
 
@@ -891,29 +891,15 @@ private:
 		colorAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		colorAttachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-		colorAttachments[2].format = swapChainImageFormat;
-		colorAttachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
-		colorAttachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-		colorAttachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		colorAttachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		colorAttachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		colorAttachments[2].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		colorAttachments[2].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-
 		colorAttachmentRefs[0].attachment = 0;
 		colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		colorAttachmentRefs[1].attachment = 1;
 		colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		inputAttachmentRef.attachment = 2;
-		inputAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentRefs.size());
 		subpass.pColorAttachments = colorAttachmentRefs.data();
-		subpass.inputAttachmentCount = 1;
-		subpass.pInputAttachments = &inputAttachmentRef;
 
 		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependency.dstSubpass = 0;
@@ -948,7 +934,7 @@ private:
 		layoutBinding[0].pImmutableSamplers = nullptr; // For Image Sampling Related Descriptors
 
 		layoutBinding[1].binding = 1;
-		layoutBinding[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		layoutBinding[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		layoutBinding[1].descriptorCount = 1;
 		layoutBinding[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		layoutBinding[1].pImmutableSamplers = nullptr; // For Image Sampling Related Descriptors
@@ -1275,7 +1261,7 @@ private:
 		createInfo[1].format = swapChainImageFormat;
 		createInfo[1].tiling = VK_IMAGE_TILING_OPTIMAL;
 		createInfo[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		createInfo[1].usage = VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		createInfo[1].usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		createInfo[1].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		createInfo[1].samples = VK_SAMPLE_COUNT_1_BIT;
 		createInfo[1].flags = 0;
@@ -1342,14 +1328,13 @@ private:
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
 			VkImageView attachments[] = {
 				rendererImageView, 
-				swapChainImageViews[i], 
-				storageImageView
+				swapChainImageViews[i]
 			};
 
 			VkFramebufferCreateInfo createInfo{};
 			createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 			createInfo.renderPass = renderPass;
-			createInfo.attachmentCount = 3;
+			createInfo.attachmentCount = 2;
 			createInfo.pAttachments = attachments;
 			createInfo.width = swapChainExtent.width;
 			createInfo.height = swapChainExtent.height;
@@ -1361,6 +1346,17 @@ private:
 		}
 	}
 
+	void CreateStorageImageSampler() {
+		VkSamplerCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		createInfo.magFilter = VK_FILTER_NEAREST;
+		createInfo.minFilter = VK_FILTER_NEAREST;
+
+		if (vkCreateSampler(device, &createInfo, nullptr, &storageImageSampler) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Sampler!");
+		}
+	}
+
 	void CreateDescriptorPool() {
 		std::array<VkDescriptorPoolSize, 2> poolSize{};
 		VkDescriptorPoolCreateInfo poolInfo{};
@@ -1368,7 +1364,7 @@ private:
 		poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		poolSize[0].descriptorCount = 1;
 
-		poolSize[1].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		poolSize[1].descriptorCount = 1;
 
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1402,13 +1398,13 @@ private:
 		VkDescriptorImageInfo imageInfo{};
 		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		imageInfo.imageView = storageImageView;
-		imageInfo.sampler = VK_NULL_HANDLE;
+		imageInfo.sampler = storageImageSampler;
 
 		descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite[1].dstSet = descriptorSet;
 		descriptorWrite[1].dstBinding = 1;
 		descriptorWrite[1].dstArrayElement = 0;
-		descriptorWrite[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		descriptorWrite[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		descriptorWrite[1].descriptorCount = 1;
 		descriptorWrite[1].pBufferInfo = nullptr;
 		descriptorWrite[1].pImageInfo = &imageInfo;
@@ -1476,6 +1472,7 @@ private:
 		CreateImages();
 		CreateImageViews();
 		CreateFramebuffers();
+		CreateStorageImageSampler();
 		CreateDescriptorPool();
 		CreateDescriptorSet();
 		CreateCommandBuffer();
@@ -1549,6 +1546,18 @@ private:
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 		vkCmdEndRenderPass(commandBuffer);
+
+		VkImageMemoryBarrier imageMemoryBarrierTransfer{};
+		imageMemoryBarrierTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierTransfer.srcAccessMask = 0;
+		imageMemoryBarrierTransfer.dstAccessMask = 0;
+		imageMemoryBarrierTransfer.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageMemoryBarrierTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		imageMemoryBarrierTransfer.image = storageImage;
+		imageMemoryBarrierTransfer.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
+		0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierTransfer);
 
 		VkImageCopy region{};
 		region.extent = {swapChainExtent.width, swapChainExtent.height, 1};
@@ -1689,6 +1698,8 @@ private:
 
     void CleanUp() {
 		CleanUpImages();
+
+		vkDestroySampler(device, storageImageSampler, nullptr);
 
 		vkDestroyBuffer(device, uniformBuffer, nullptr);
 		vkFreeMemory(device, uniformBufferMemory, nullptr);
