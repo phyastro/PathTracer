@@ -89,6 +89,7 @@ struct UniformBufferObject {
 
 struct PushConstantValues {
 	glm::vec2 resolution;
+	int frame;
 };
 
 const std::vector<const char*> validationLayers = {
@@ -100,8 +101,7 @@ const std::vector<const char*> instanceExtensions = {
 };
 
 const std::vector<const char*> deviceExtensions = {
-	VK_KHR_SWAPCHAIN_EXTENSION_NAME, 
-	VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 const std::vector<colorFormatName> colorFormats = {
@@ -352,6 +352,9 @@ private:
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 	std::vector<VkImageView> swapChainImageViews;
+	std::vector<VkFramebuffer> swapChainFramebuffers;
+
+	VkRenderPass renderPass;
 
 	VkDescriptorSetLayout descriptorSetLayout;
 	std::vector<VkShaderModule> shaderModules;
@@ -377,7 +380,6 @@ private:
 	VkImage storageImage;
 	VkDeviceMemory storageImageMemory;
 	VkImageView storageImageView;
-	VkSampler storageImageSampler;
 
 	VkDescriptorPool descriptorPool;
 	VkDescriptorSet descriptorSet;
@@ -391,6 +393,8 @@ private:
 	VkFence inFlightFence;
 
 	bool isViewPortResized = false;
+
+	int frame = 0;
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -674,12 +678,6 @@ private:
 
 		VkDeviceCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-
-		VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeature{};
-		dynamicRenderingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
-		dynamicRenderingFeature.dynamicRendering = VK_TRUE;
-		createInfo.pNext = &dynamicRenderingFeature;
-
 		createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
 		createInfo.pQueueCreateInfos = queueCreateInfos.data();
 		createInfo.pEnabledFeatures = &deviceFeatures;
@@ -719,14 +717,12 @@ private:
 		for (const VkSurfaceFormatKHR& availableFormat : availableFormats) {
 			if (availableFormat.format == VK_FORMAT_R16G16B16A16_SFLOAT) {
 				surfaceFormat = availableFormat;
-				break;
-			}
-		}
-
-		for (const colorSpaceName& colorSpace : colorSpaces) {
-			if (surfaceFormat.colorSpace == colorSpace.space) {
-				std::cout << "Using VK_FORMAT_R16G16B16A16_SFLOAT Format With " << colorSpace.name << " Color Space" << std::endl;
-				return surfaceFormat;
+				for (const colorSpaceName& colorSpace : colorSpaces) {
+					if (surfaceFormat.colorSpace == colorSpace.space) {
+						std::cout << "Using VK_FORMAT_R16G16B16A16_SFLOAT Format With " << colorSpace.name << " Color Space" << std::endl;
+						return surfaceFormat;
+					}
+				}
 			}
 		}
 
@@ -811,7 +807,6 @@ private:
 		createInfo.imageExtent = extent;
 		createInfo.imageArrayLayers = 1;
 		createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-		// VK_IMAGE_USAGE_TRANSFER_DST_BIT For Seperate Post-Processing And Then Display
 
 		QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
 		uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
@@ -871,6 +866,77 @@ private:
 		}
 	}
 
+	void CreateRenderPass() {
+		std::array<VkAttachmentDescription, 3> colorAttachments{};
+		std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
+		VkAttachmentReference inputAttachmentRef{};
+		VkSubpassDescription subpass{};
+		VkSubpassDependency dependency{};
+
+		colorAttachments[0].format = swapChainImageFormat;
+		colorAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+		colorAttachments[1].format = swapChainImageFormat;
+		colorAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		colorAttachments[2].format = swapChainImageFormat;
+		colorAttachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		colorAttachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachments[2].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		colorAttachments[2].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+		colorAttachmentRefs[0].attachment = 0;
+		colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		colorAttachmentRefs[1].attachment = 1;
+		colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		inputAttachmentRef.attachment = 2;
+		inputAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentRefs.size());
+		subpass.pColorAttachments = colorAttachmentRefs.data();
+		subpass.inputAttachmentCount = 1;
+		subpass.pInputAttachments = &inputAttachmentRef;
+
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		dependency.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.srcAccessMask = 0;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		VkRenderPassCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		createInfo.attachmentCount = static_cast<uint32_t>(colorAttachments.size());
+		createInfo.pAttachments = colorAttachments.data();
+		createInfo.subpassCount = 1;
+		createInfo.pSubpasses = &subpass;
+		createInfo.dependencyCount = 1;
+		createInfo.pDependencies = &dependency;
+
+		if (vkCreateRenderPass(device, &createInfo, nullptr, &renderPass) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Render Pass!");
+		}
+	}
+
 	void CreateDescriptorSetLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> layoutBinding{};
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -882,7 +948,7 @@ private:
 		layoutBinding[0].pImmutableSamplers = nullptr; // For Image Sampling Related Descriptors
 
 		layoutBinding[1].binding = 1;
-		layoutBinding[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		layoutBinding[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 		layoutBinding[1].descriptorCount = 1;
 		layoutBinding[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		layoutBinding[1].pImmutableSamplers = nullptr; // For Image Sampling Related Descriptors
@@ -893,7 +959,7 @@ private:
 		layoutInfo.flags = 0;
 
 		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Image Sampler Descriptor Set Layout!");
+			throw std::runtime_error("Failed To Create Descriptor Set Layout!");
 		}
 	}
 
@@ -987,15 +1053,6 @@ private:
 		dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
 		dynamicState.pDynamicStates = dynamicStates.data();
 
-		std::array<VkFormat, 2> colorAttachmentFormats{};
-		colorAttachmentFormats[0] = swapChainImageFormat;
-		colorAttachmentFormats[1] = swapChainImageFormat;
-
-		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
-		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-		pipelineRenderingCreateInfo.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size());
-		pipelineRenderingCreateInfo.pColorAttachmentFormats = colorAttachmentFormats.data();
-
 		VkPushConstantRange pushConstantRange{};
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(PushConstantValues);
@@ -1015,7 +1072,6 @@ private:
 
 		VkGraphicsPipelineCreateInfo pipelineInfo{};
 		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipelineInfo.pNext = &pipelineRenderingCreateInfo;
 		pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
 		pipelineInfo.pStages = shaderStages.data();
 		pipelineInfo.pVertexInputState = &vertexInputInfo;
@@ -1026,7 +1082,8 @@ private:
 		pipelineInfo.pDepthStencilState = nullptr;
 		pipelineInfo.pColorBlendState = &colorBlending;
 		pipelineInfo.pDynamicState = &dynamicState;
-		pipelineInfo.renderPass = nullptr;
+		pipelineInfo.renderPass = renderPass;
+		pipelineInfo.subpass = 0;
 		pipelineInfo.layout = pipelineLayout;
 
 		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
@@ -1218,7 +1275,7 @@ private:
 		createInfo[1].format = swapChainImageFormat;
 		createInfo[1].tiling = VK_IMAGE_TILING_OPTIMAL;
 		createInfo[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		createInfo[1].usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		createInfo[1].usage = VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		createInfo[1].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		createInfo[1].samples = VK_SAMPLE_COUNT_1_BIT;
 		createInfo[1].flags = 0;
@@ -1279,14 +1336,28 @@ private:
 		}
 	}
 
-	void CreateStorageImageSampler() {
-		VkSamplerCreateInfo createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		createInfo.magFilter = VK_FILTER_NEAREST;
-		createInfo.minFilter = VK_FILTER_NEAREST;
+	void CreateFramebuffers() {
+		swapChainFramebuffers.resize(swapChainImageViews.size());
 
-		if (vkCreateSampler(device, &createInfo, nullptr, &storageImageSampler) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Renderer Image Sampler!");
+		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+			VkImageView attachments[] = {
+				rendererImageView, 
+				swapChainImageViews[i], 
+				storageImageView
+			};
+
+			VkFramebufferCreateInfo createInfo{};
+			createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			createInfo.renderPass = renderPass;
+			createInfo.attachmentCount = 3;
+			createInfo.pAttachments = attachments;
+			createInfo.width = swapChainExtent.width;
+			createInfo.height = swapChainExtent.height;
+			createInfo.layers = 1;
+
+			if (vkCreateFramebuffer(device, &createInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+				std::runtime_error("Failed To Create Framebuffers!");
+			}
 		}
 	}
 
@@ -1297,7 +1368,7 @@ private:
 		poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		poolSize[0].descriptorCount = 1;
 
-		poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSize[1].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 		poolSize[1].descriptorCount = 1;
 
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1331,13 +1402,13 @@ private:
 		VkDescriptorImageInfo imageInfo{};
 		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		imageInfo.imageView = storageImageView;
-		imageInfo.sampler = storageImageSampler;
+		imageInfo.sampler = VK_NULL_HANDLE;
 
 		descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite[1].dstSet = descriptorSet;
 		descriptorWrite[1].dstBinding = 1;
 		descriptorWrite[1].dstArrayElement = 0;
-		descriptorWrite[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		descriptorWrite[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 		descriptorWrite[1].descriptorCount = 1;
 		descriptorWrite[1].pBufferInfo = nullptr;
 		descriptorWrite[1].pImageInfo = &imageInfo;
@@ -1395,6 +1466,7 @@ private:
 		CreateLogicalDevice();
 		CreateSwapChain();
 		CreateSwapChainImageViews();
+		CreateRenderPass();
 		CreateDescriptorSetLayout();
 		CreateGraphicsPipeline();
 		CreateCommandPool();
@@ -1403,7 +1475,7 @@ private:
 		CreateUniformBuffer();
 		CreateImages();
 		CreateImageViews();
-		CreateStorageImageSampler();
+		CreateFramebuffers();
 		CreateDescriptorPool();
 		CreateDescriptorSet();
 		CreateCommandBuffer();
@@ -1420,34 +1492,17 @@ private:
 			throw std::runtime_error("Failed To Begin Recording Command Buffer!");
 		}
 
-		std::array<VkImageMemoryBarrier, 3> imageMemoryBarrierRender{};
-
-		imageMemoryBarrierRender[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierRender[0].srcAccessMask = 0;
-		imageMemoryBarrierRender[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierRender[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrierRender[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierRender[0].image = rendererImage;
-		imageMemoryBarrierRender[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		imageMemoryBarrierRender[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierRender[1].srcAccessMask = 0;
-		imageMemoryBarrierRender[1].dstAccessMask = 0;
-		imageMemoryBarrierRender[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrierRender[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageMemoryBarrierRender[1].image = storageImage;
-		imageMemoryBarrierRender[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		imageMemoryBarrierRender[2].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierRender[2].srcAccessMask = 0;
-		imageMemoryBarrierRender[2].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierRender[2].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrierRender[2].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierRender[2].image = swapChainImages[imageIndex];
-		imageMemoryBarrierRender[2].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+		VkImageMemoryBarrier imageMemoryBarrierStorage{};
+		imageMemoryBarrierStorage.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageMemoryBarrierStorage.srcAccessMask = 0;
+		imageMemoryBarrierStorage.dstAccessMask = 0;
+		imageMemoryBarrierStorage.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		imageMemoryBarrierStorage.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageMemoryBarrierStorage.image = storageImage;
+		imageMemoryBarrierStorage.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
 		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
-		0, 0,  nullptr, 0, nullptr, static_cast<uint32_t>(imageMemoryBarrierRender.size()), imageMemoryBarrierRender.data());
+		0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierStorage);
 
 		VkViewport viewport{};
 		viewport.x = 0.0f;
@@ -1469,33 +1524,20 @@ private:
 
 		vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-		std::array<VkRenderingAttachmentInfo, 2> colorAttachmentInfo{};
-		VkClearValue clearValue = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+		std::array<VkClearValue, 2> clearValue{};
+		clearValue[0] = {{0.0f, 0.0f, 0.0f, 1.0f}};
+		clearValue[1] = {{0.0f, 0.0f, 0.0f, 1.0f}};
 
-		colorAttachmentInfo[0].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-		colorAttachmentInfo[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		colorAttachmentInfo[0].imageView = rendererImageView;
-		colorAttachmentInfo[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		colorAttachmentInfo[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		colorAttachmentInfo[0].clearValue = clearValue;
+		VkRenderPassBeginInfo renderPassBeginInfo{};
+		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		renderPassBeginInfo.renderPass = renderPass;
+		renderPassBeginInfo.framebuffer = swapChainFramebuffers[imageIndex];
+		renderPassBeginInfo.renderArea.extent = swapChainExtent;
+		renderPassBeginInfo.renderArea.offset = {0, 0};
+		renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValue.size());
+		renderPassBeginInfo.pClearValues = clearValue.data();
 
-		colorAttachmentInfo[1].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-		colorAttachmentInfo[1].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		colorAttachmentInfo[1].imageView = swapChainImageViews[imageIndex];
-		colorAttachmentInfo[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		colorAttachmentInfo[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		colorAttachmentInfo[1].clearValue = clearValue;
-
-		VkRenderingInfo renderingInfo{};
-		renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-		renderingInfo.renderArea.offset = {0, 0};
-		renderingInfo.renderArea.extent = swapChainExtent;
-		renderingInfo.layerCount = 1;
-		renderingInfo.colorAttachmentCount = 2;
-		renderingInfo.pColorAttachments = colorAttachmentInfo.data();
-		renderingInfo.flags = 0;
-
-		vkCmdBeginRendering(commandBuffer, &renderingInfo);
+		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
@@ -1506,36 +1548,7 @@ private:
 
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
-		vkCmdEndRendering(commandBuffer);
-
-		std::array<VkImageMemoryBarrier, 3> imageMemoryBarrierTransferPresent{};
-
-		imageMemoryBarrierTransferPresent[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierTransferPresent[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierTransferPresent[0].dstAccessMask = 0;
-		imageMemoryBarrierTransferPresent[0].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierTransferPresent[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		imageMemoryBarrierTransferPresent[0].image = rendererImage;
-		imageMemoryBarrierTransferPresent[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		imageMemoryBarrierTransferPresent[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierTransferPresent[1].srcAccessMask = 0;
-		imageMemoryBarrierTransferPresent[1].dstAccessMask = 0;
-		imageMemoryBarrierTransferPresent[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageMemoryBarrierTransferPresent[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		imageMemoryBarrierTransferPresent[1].image = storageImage;
-		imageMemoryBarrierTransferPresent[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		imageMemoryBarrierTransferPresent[2].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierTransferPresent[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		imageMemoryBarrierTransferPresent[2].dstAccessMask = 0;
-		imageMemoryBarrierTransferPresent[2].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		imageMemoryBarrierTransferPresent[2].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		imageMemoryBarrierTransferPresent[2].image = swapChainImages[imageIndex];
-		imageMemoryBarrierTransferPresent[2].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
-		0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(imageMemoryBarrierTransferPresent.size()), imageMemoryBarrierTransferPresent.data());
+		vkCmdEndRenderPass(commandBuffer);
 
 		VkImageCopy region{};
 		region.extent = {swapChainExtent.width, swapChainExtent.height, 1};
@@ -1554,6 +1567,10 @@ private:
 	void CleanUpImages() {
 		for (VkImageView imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
+		}
+
+		for (VkFramebuffer framebuffer : swapChainFramebuffers) {
+			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
 
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
@@ -1581,6 +1598,7 @@ private:
 
 		CreateImages();
 		CreateImageViews();
+		CreateFramebuffers();
 		UpdateDescriptorSet();
 	}
 
@@ -1594,6 +1612,7 @@ private:
 
 	void UpdatePushConstant() {
 		pushConstant.resolution = glm::vec2(W, H);
+		pushConstant.frame = frame;
 	}
 
 	void DrawFrame() {
@@ -1659,6 +1678,9 @@ private:
 
         while (isRunning) {
             ManageSDL::SDLHandleEvents(isRunning, isViewPortResized);
+
+			frame += 1;
+
 			DrawFrame();
         }
 
@@ -1667,8 +1689,6 @@ private:
 
     void CleanUp() {
 		CleanUpImages();
-
-		vkDestroySampler(device, storageImageSampler, nullptr);
 
 		vkDestroyBuffer(device, uniformBuffer, nullptr);
 		vkFreeMemory(device, uniformBufferMemory, nullptr);
@@ -1691,6 +1711,8 @@ private:
 
 		vkDestroyPipeline(device, pipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
+		vkDestroyRenderPass(device, renderPass, nullptr);
 
 		vkDestroyDevice(device, nullptr);
 
