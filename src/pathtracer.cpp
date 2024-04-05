@@ -2,6 +2,9 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 #include <SDL_image.h>
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_vulkan.h"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 
@@ -317,18 +320,22 @@ namespace ManageSDL{
             if (event.type == SDL_QUIT) {
                 isRunning = false;
             }
+
 			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isFrameBufferResized)) {
 				isFrameBufferResized = true;
 			}
+
+			ImGui_ImplSDL2_ProcessEvent(&event);
         }
     }
 }
 
-class VulkanApp {
+class App {
 public:
     void run() {
         InitWindow();
         InitVulkan();
+		InitImGui();
         MainLoop();
         CleanUp();
     }
@@ -389,6 +396,9 @@ private:
 	VkSemaphore renderFinishedSemaphore;
 	VkFence inFlightFence;
 
+	VkDescriptorPool imguiDescriptorPool;
+	ImGuiIO* io;
+
 	bool isViewPortResized = false;
 
 	int frame = 0;
@@ -397,7 +407,7 @@ private:
         SDL_Init(SDL_INIT_VIDEO);
 
         Uint32 WindowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
-        window = SDL_CreateWindow("Vulkan App", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, WindowFlags);
+        window = SDL_CreateWindow("Path Tracer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, WindowFlags);
     }
 
 	bool CheckValidationLayerSupport() {
@@ -864,10 +874,12 @@ private:
 	}
 
 	void CreateRenderPass() {
-		std::array<VkAttachmentDescription, 2> colorAttachments{};
-		std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
-		VkSubpassDescription subpass{};
-		VkSubpassDependency dependency{};
+		std::array<VkAttachmentDescription, 3> colorAttachments{};
+		std::array<VkAttachmentReference, 2> subpass1ColorAttachmentRefs{};
+		VkAttachmentReference subpass2ColorAttachmentRef{};
+		std::array<VkSubpassDescription, 2> subpass{};
+		std::array<VkSubpassDependency, 2> dependency{};
+		VkRenderPassCreateInfo createInfo{};
 
 		colorAttachments[0].format = swapChainImageFormat;
 		colorAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -885,34 +897,57 @@ private:
 		colorAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		colorAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		colorAttachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		colorAttachments[1].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		colorAttachmentRefs[0].attachment = 0;
-		colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_GENERAL;
+		colorAttachments[2].format = swapChainImageFormat;
+		colorAttachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		colorAttachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachments[2].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colorAttachments[2].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-		colorAttachmentRefs[1].attachment = 1;
-		colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		subpass1ColorAttachmentRefs[0].attachment = 0;
+		subpass1ColorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_GENERAL;
 
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentRefs.size());
-		subpass.pColorAttachments = colorAttachmentRefs.data();
+		subpass1ColorAttachmentRefs[1].attachment = 1;
+		subpass1ColorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.dstSubpass = 0;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependency.srcAccessMask = 0;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+		subpass2ColorAttachmentRef.attachment = 2;
+		subpass2ColorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkRenderPassCreateInfo createInfo{};
+		subpass[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass[0].colorAttachmentCount = static_cast<uint32_t>(subpass1ColorAttachmentRefs.size());
+		subpass[0].pColorAttachments = subpass1ColorAttachmentRefs.data();
+
+		subpass[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass[1].colorAttachmentCount = 1;
+		subpass[1].pColorAttachments = &subpass2ColorAttachmentRef;
+
+		dependency[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency[0].dstSubpass = 0;
+		dependency[0].srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dependency[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency[0].srcAccessMask = 0;
+		dependency[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependency[1].srcSubpass = 0;
+		dependency[1].dstSubpass = 1;
+		dependency[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
 		createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		createInfo.attachmentCount = static_cast<uint32_t>(colorAttachments.size());
 		createInfo.pAttachments = colorAttachments.data();
-		createInfo.subpassCount = 1;
-		createInfo.pSubpasses = &subpass;
-		createInfo.dependencyCount = 1;
-		createInfo.pDependencies = &dependency;
+		createInfo.subpassCount = static_cast<uint32_t>(subpass.size());
+		createInfo.pSubpasses = subpass.data();
+		createInfo.dependencyCount = static_cast<uint32_t>(dependency.size());
+		createInfo.pDependencies = dependency.data();
 
 		if (vkCreateRenderPass(device, &createInfo, nullptr, &renderPass) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Render Pass!");
@@ -1286,13 +1321,14 @@ private:
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
 			VkImageView attachments[] = {
 				rendererImageView, 
+				swapChainImageViews[i], 
 				swapChainImageViews[i]
 			};
 
 			VkFramebufferCreateInfo createInfo{};
 			createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 			createInfo.renderPass = renderPass;
-			createInfo.attachmentCount = 2;
+			createInfo.attachmentCount = std::size(attachments);
 			createInfo.pAttachments = attachments;
 			createInfo.width = swapChainExtent.width;
 			createInfo.height = swapChainExtent.height;
@@ -1400,7 +1436,6 @@ private:
 	void CreateSyncObjects() {
 		VkSemaphoreCreateInfo semaphoreInfo{};
 		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
 		VkFenceCreateInfo fenceInfo{};
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
@@ -1437,6 +1472,67 @@ private:
 		CreateSyncObjects();
     }
 
+	void CreateImGuiDescriptorPool() {
+		VkDescriptorPoolSize poolSize[] = 
+		{
+			{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+			{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+		};
+
+		VkDescriptorPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInfo.poolSizeCount = std::size(poolSize);
+		poolInfo.pPoolSizes = poolSize;
+		poolInfo.maxSets = 1000;
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+
+		if(vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create ImGui Descriptor Pool!");
+		}
+	}
+
+	void InitImGuiLib() {
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		io = &ImGui::GetIO(); (void)io;
+		io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+		ImGui::StyleColorsDark();
+
+		ImGui_ImplSDL2_InitForVulkan(window);
+
+		ImGui_ImplVulkan_InitInfo initInfo{};
+		initInfo.Instance = instance;
+		initInfo.PhysicalDevice = physicalDevice;
+		initInfo.Device = device;
+		initInfo.Queue = graphicsQueue;
+		initInfo.QueueFamily = FindQueueFamilies(physicalDevice).graphicsFamily.value();
+		initInfo.DescriptorPool = imguiDescriptorPool;
+		initInfo.MinImageCount = static_cast<uint32_t>(swapChainImageViews.size());
+		initInfo.ImageCount = static_cast<uint32_t>(swapChainImageViews.size());
+		initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+		initInfo.RenderPass = renderPass;
+		initInfo.Subpass = 1;
+		initInfo.UseDynamicRendering = false;
+
+		ImGui_ImplVulkan_Init(&initInfo);
+
+		ImGui_ImplVulkan_CreateFontsTexture();
+	}
+
+	void InitImGui() {
+		CreateImGuiDescriptorPool();
+		InitImGuiLib();
+	}
+
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1467,18 +1563,14 @@ private:
 
 		vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-		std::array<VkClearValue, 2> clearValue{};
-		clearValue[0] = {{0.0f, 0.0f, 0.0f, 1.0f}};
-		clearValue[1] = {{0.0f, 0.0f, 0.0f, 1.0f}};
-
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 		renderPassBeginInfo.renderPass = renderPass;
 		renderPassBeginInfo.framebuffer = swapChainFramebuffers[imageIndex];
 		renderPassBeginInfo.renderArea.extent = swapChainExtent;
 		renderPassBeginInfo.renderArea.offset = {0, 0};
-		renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValue.size());
-		renderPassBeginInfo.pClearValues = clearValue.data();
+		renderPassBeginInfo.clearValueCount = 0;
+		renderPassBeginInfo.pClearValues = nullptr;
 
 		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1490,6 +1582,10 @@ private:
 		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstant), &pushConstant);
 
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+		vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
 		vkCmdEndRenderPass(commandBuffer);
 
@@ -1608,13 +1704,42 @@ private:
     
     void MainLoop() {
         bool isRunning = true;
+		float FPS = 60.0f;
+		std::vector<float> frames;
 
         while (isRunning) {
             ManageSDL::SDLHandleEvents(isRunning, isViewPortResized);
 
 			frame += 1;
 
+			ImGui_ImplVulkan_NewFrame();
+			ImGui_ImplSDL2_NewFrame();
+			ImGui::NewFrame();
+
+			ImGuiWindowFlags WinFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize;
+
+			{
+				ImGui::Begin("Scene", NULL, WinFlags);
+				ImGui::SetWindowPos(ImVec2(W - ImGui::GetWindowWidth(), 0));
+				ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
+				ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
+				ImGui::End();
+			}
+
+			ImGui::Render();
+
 			DrawFrame();
+
+			FPS = 1.0f / io->DeltaTime;
+			if (frames.size() > 100) {
+				for (size_t i = 1; i < frames.size(); i++) {
+					frames[i - 1] = frames[i];
+				}
+				frames[frames.size() - 1] = 1000.0f / FPS;
+			}
+			else {
+				frames.push_back(1000.0f / FPS);
+			}
         }
 
 		vkDeviceWaitIdle(device);
@@ -1623,11 +1748,14 @@ private:
     void CleanUp() {
 		CleanUpImages();
 
+		ImGui_ImplVulkan_Shutdown();
+
 		vkDestroySampler(device, rendererImageSampler, nullptr);
 
 		vkDestroyBuffer(device, uniformBuffer, nullptr);
 		vkFreeMemory(device, uniformBufferMemory, nullptr);
 
+		vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -1665,7 +1793,7 @@ private:
 
 int main(int argc, char* argv[])
 {
-    VulkanApp app;
+    App app;
 
     try {
         app.run();
