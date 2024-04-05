@@ -376,11 +376,7 @@ private:
 	VkImage rendererImage;
 	VkDeviceMemory rendererImageMemory;
 	VkImageView rendererImageView;
-
-	VkImage storageImage;
-	VkDeviceMemory storageImageMemory;
-	VkImageView storageImageView;
-	VkSampler storageImageSampler;
+	VkSampler rendererImageSampler;
 
 	VkDescriptorPool descriptorPool;
 	VkDescriptorSet descriptorSet;
@@ -875,16 +871,16 @@ private:
 
 		colorAttachments[0].format = swapChainImageFormat;
 		colorAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-		colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		colorAttachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		colorAttachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		colorAttachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		colorAttachments[0].finalLayout = VK_IMAGE_LAYOUT_GENERAL;
 
 		colorAttachments[1].format = swapChainImageFormat;
 		colorAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
-		colorAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		colorAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -892,7 +888,7 @@ private:
 		colorAttachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
 		colorAttachmentRefs[0].attachment = 0;
-		colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_GENERAL;
 
 		colorAttachmentRefs[1].attachment = 1;
 		colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1227,74 +1223,43 @@ private:
 		vkMapMemory(device, uniformBufferMemory, 0, bufferSize, 0, &uniformBufferMapped);
 	}
 
-	void CreateImages() {
-		std::array<VkImageCreateInfo, 2> createInfo{};
-		std::array<VkMemoryRequirements, 2> memoryRequirements;
-		std::array<VkMemoryAllocateInfo, 2> allocateInfo{};
+	void CreateRendererImage() {
+		VkImageCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		createInfo.imageType = VK_IMAGE_TYPE_2D;
+		createInfo.extent.width = swapChainExtent.width;
+		createInfo.extent.height = swapChainExtent.height;
+		createInfo.extent.depth = 1;
+		createInfo.mipLevels = 1;
+		createInfo.arrayLayers = 1;
+		createInfo.format = swapChainImageFormat;
+		createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		createInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		createInfo.flags = 0;
 
-		createInfo[0].sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		createInfo[0].imageType = VK_IMAGE_TYPE_2D;
-		createInfo[0].extent.width = swapChainExtent.width;
-		createInfo[0].extent.height = swapChainExtent.height;
-		createInfo[0].extent.depth = 1;
-		createInfo[0].mipLevels = 1;
-		createInfo[0].arrayLayers = 1;
-		createInfo[0].format = swapChainImageFormat;
-		createInfo[0].tiling = VK_IMAGE_TILING_OPTIMAL;
-		createInfo[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		createInfo[0].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-		createInfo[0].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		createInfo[0].samples = VK_SAMPLE_COUNT_1_BIT;
-		createInfo[0].flags = 0;
-
-		if (vkCreateImage(device, &createInfo[0], nullptr, &rendererImage) != VK_SUCCESS) {
+		if (vkCreateImage(device, &createInfo, nullptr, &rendererImage) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Renderer Image!");
 		}
 
-		createInfo[1].sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		createInfo[1].imageType = VK_IMAGE_TYPE_2D;
-		createInfo[1].extent.width = swapChainExtent.width;
-		createInfo[1].extent.height = swapChainExtent.height;
-		createInfo[1].extent.depth = 1;
-		createInfo[1].mipLevels = 1;
-		createInfo[1].arrayLayers = 1;
-		createInfo[1].format = swapChainImageFormat;
-		createInfo[1].tiling = VK_IMAGE_TILING_OPTIMAL;
-		createInfo[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		createInfo[1].usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-		createInfo[1].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		createInfo[1].samples = VK_SAMPLE_COUNT_1_BIT;
-		createInfo[1].flags = 0;
+		VkMemoryRequirements memoryRequirements;
+		vkGetImageMemoryRequirements(device, rendererImage, &memoryRequirements);
 
-		if (vkCreateImage(device, &createInfo[1], nullptr, &storageImage) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Storage Image!");
-		}
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = FindMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-		vkGetImageMemoryRequirements(device, rendererImage, &memoryRequirements[0]);
-
-		allocateInfo[0].sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo[0].allocationSize = memoryRequirements[0].size;
-		allocateInfo[0].memoryTypeIndex = FindMemoryType(memoryRequirements[0].memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		if (vkAllocateMemory(device, &allocateInfo[0], nullptr, &rendererImageMemory) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &rendererImageMemory) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Allocate Renderer Image Memory!");
 		}
 
-		vkGetImageMemoryRequirements(device, storageImage, &memoryRequirements[1]);
-
-		allocateInfo[1].sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo[1].allocationSize = memoryRequirements[1].size;
-		allocateInfo[1].memoryTypeIndex = FindMemoryType(memoryRequirements[1].memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		if (vkAllocateMemory(device, &allocateInfo[1], nullptr, &storageImageMemory) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Allocate Storage Image Memory!");
-		}
-
 		vkBindImageMemory(device, rendererImage, rendererImageMemory, 0);
-		vkBindImageMemory(device, storageImage, storageImageMemory, 0);
 	}
 
-	void CreateImageViews() {
+	void CreateRendererImageView() {
 		VkImageViewCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -1303,22 +1268,15 @@ private:
 		createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+		createInfo.image = rendererImage;
 		createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		createInfo.subresourceRange.baseMipLevel = 0;
 		createInfo.subresourceRange.levelCount = 1;
 		createInfo.subresourceRange.baseArrayLayer = 0;
 		createInfo.subresourceRange.layerCount = 1;
 
-		createInfo.image = rendererImage;
-
 		if (vkCreateImageView(device, &createInfo, nullptr, &rendererImageView) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Renderer Image View!");
-		}
-
-		createInfo.image = storageImage;
-
-		if (vkCreateImageView(device, &createInfo, nullptr, &storageImageView) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Storage Image View!");
 		}
 	}
 
@@ -1346,14 +1304,14 @@ private:
 		}
 	}
 
-	void CreateStorageImageSampler() {
+	void CreateRendererImageSampler() {
 		VkSamplerCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		createInfo.magFilter = VK_FILTER_NEAREST;
 		createInfo.minFilter = VK_FILTER_NEAREST;
 
-		if (vkCreateSampler(device, &createInfo, nullptr, &storageImageSampler) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Sampler!");
+		if (vkCreateSampler(device, &createInfo, nullptr, &rendererImageSampler) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Create Renderer Image Sampler!");
 		}
 	}
 
@@ -1373,7 +1331,7 @@ private:
 		poolInfo.maxSets = 1;
 
 		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Create Image Sampler Descriptor Pool!");
+			throw std::runtime_error("Failed To Create Descriptor Pool!");
 		}
 	}
 
@@ -1396,9 +1354,9 @@ private:
 		descriptorWrite[0].pTexelBufferView = nullptr;
 
 		VkDescriptorImageInfo imageInfo{};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageInfo.imageView = storageImageView;
-		imageInfo.sampler = storageImageSampler;
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		imageInfo.imageView = rendererImageView;
+		imageInfo.sampler = rendererImageSampler;
 
 		descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite[1].dstSet = descriptorSet;
@@ -1469,10 +1427,10 @@ private:
 		CreateVertexBuffer();
 		CreateIndexBuffer();
 		CreateUniformBuffer();
-		CreateImages();
-		CreateImageViews();
+		CreateRendererImage();
+		CreateRendererImageView();
 		CreateFramebuffers();
-		CreateStorageImageSampler();
+		CreateRendererImageSampler();
 		CreateDescriptorPool();
 		CreateDescriptorSet();
 		CreateCommandBuffer();
@@ -1488,18 +1446,6 @@ private:
 		if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Begin Recording Command Buffer!");
 		}
-
-		VkImageMemoryBarrier imageMemoryBarrierStorage{};
-		imageMemoryBarrierStorage.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierStorage.srcAccessMask = 0;
-		imageMemoryBarrierStorage.dstAccessMask = 0;
-		imageMemoryBarrierStorage.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrierStorage.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageMemoryBarrierStorage.image = storageImage;
-		imageMemoryBarrierStorage.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
-		0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierStorage);
 
 		VkViewport viewport{};
 		viewport.x = 0.0f;
@@ -1547,27 +1493,6 @@ private:
 
 		vkCmdEndRenderPass(commandBuffer);
 
-		VkImageMemoryBarrier imageMemoryBarrierTransfer{};
-		imageMemoryBarrierTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrierTransfer.srcAccessMask = 0;
-		imageMemoryBarrierTransfer.dstAccessMask = 0;
-		imageMemoryBarrierTransfer.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageMemoryBarrierTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		imageMemoryBarrierTransfer.image = storageImage;
-		imageMemoryBarrierTransfer.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 
-		0, 0,  nullptr, 0, nullptr, 1, &imageMemoryBarrierTransfer);
-
-		VkImageCopy region{};
-		region.extent = {swapChainExtent.width, swapChainExtent.height, 1};
-		region.srcOffset = {0, 0, 0};
-		region.dstOffset = {0, 0, 0};
-		region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-		region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-
-		vkCmdCopyImage(commandBuffer, rendererImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, storageImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
 		if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Record Command Buffer!");
 		}
@@ -1584,9 +1509,6 @@ private:
 
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 
-		vkDestroyImageView(device, storageImageView, nullptr);
-		vkDestroyImage(device, storageImage, nullptr);
-		vkFreeMemory(device, storageImageMemory, nullptr);
 		vkDestroyImageView(device, rendererImageView, nullptr);
 		vkDestroyImage(device, rendererImage, nullptr);
 		vkFreeMemory(device, rendererImageMemory, nullptr);
@@ -1605,8 +1527,8 @@ private:
 		CreateSwapChain();
 		CreateSwapChainImageViews();
 
-		CreateImages();
-		CreateImageViews();
+		CreateRendererImage();
+		CreateRendererImageView();
 		CreateFramebuffers();
 		UpdateDescriptorSet();
 	}
@@ -1633,6 +1555,7 @@ private:
 
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			RecreateImages();
+			frame = 1;
 			return;
 		} else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)) {
 			throw std::runtime_error("Failed To Acquire Swap Chain Image!");
@@ -1677,6 +1600,7 @@ private:
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR) || isViewPortResized) {
 			isViewPortResized = false;
 			RecreateImages();
+			frame = 0;
 		} else if (result != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Present Swap Chain Image!");
 		}
@@ -1699,7 +1623,7 @@ private:
     void CleanUp() {
 		CleanUpImages();
 
-		vkDestroySampler(device, storageImageSampler, nullptr);
+		vkDestroySampler(device, rendererImageSampler, nullptr);
 
 		vkDestroyBuffer(device, uniformBuffer, nullptr);
 		vkFreeMemory(device, uniformBufferMemory, nullptr);
