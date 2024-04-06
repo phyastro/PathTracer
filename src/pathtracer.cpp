@@ -24,6 +24,11 @@
 const unsigned int WIDTH = 1280;
 const unsigned int HEIGHT = 720;
 const bool VSYNC = false;
+const int MAX_FRAMES_IN_FLIGHT = 2;
+const int NUMSAMPLES = 10000;
+const int NUMSAMPLESPERFRAME = 5;
+const int PATHLENGTH = 10000;
+const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 
 #define ISDEBUG
 
@@ -86,13 +91,80 @@ struct Vertex {
 	}
 };
 
+struct sphere {
+	float pos[3];
+	float radius;
+	int materialID;
+};
+
+struct plane {
+	float pos[3];
+	int materialID;
+};
+
+struct box {
+	float pos[3];
+	float rotation[3];
+	float size[3];
+	int materialID;
+};
+
+struct lens {
+	float pos[3];
+	float rotation[3];
+	float radius;
+	float focalLength;
+	float thickness;
+	bool isConverging;
+	int materialID;
+};
+
+struct material {
+	float reflection[3];
+	float emission[2];
+};
+
+struct Camera {
+	glm::vec3 pos;
+	glm::vec2 angle;
+	int ISO;
+	float size;
+	float apertureSize;
+	float apertureDist;
+	float lensRadius;
+	float lensFocalLength;
+	float lensThickness;
+	float lensDistance;
+};
+
 struct UniformBufferObject {
-	alignas(16) glm::vec4 dummy[25];
+	alignas(16) float numObjects[4];
+	alignas(16) float objects[1024];
+	alignas(16) float materials[512];
+	alignas(16) float CIEXYZ2006[1323];
 };
 
 struct PushConstantValues {
-	glm::vec2 resolution;
+	glm::ivec2 resolution;
 	int frame;
+	int samples;
+	int samplesPerFrame;
+	float FPS;
+	float persistence;
+	int pathLength;
+	glm::vec2 cameraAngle;
+	float cameraPosX;
+	float cameraPosY;
+	float cameraPosZ;
+	int ISO;
+	float cameraSize;
+	float apertureSize;
+	float apertureDist;
+	float lensRadius;
+	float lensFocalLength;
+	float lensThickness;
+	float lensDistance;
+	int tonemap;
 };
 
 const std::vector<const char*> validationLayers = {
@@ -104,7 +176,8 @@ const std::vector<const char*> instanceExtensions = {
 };
 
 const std::vector<const char*> deviceExtensions = {
-	VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME, 
+	VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME
 };
 
 const std::vector<colorFormatName> colorFormats = {
@@ -273,6 +346,452 @@ const std::vector<uint16_t> indices = {
 	0, 1, 2, 2, 3, 0
 };
 
+// Table
+// http://www.cvrl.org/ciexyzpr.htm
+const float CIEXYZ2006[1323] = {
+    0.00295242f, 	0.0004076779f, 	0.01318752f,
+    0.003577275f, 	0.0004977769f, 	0.01597879f,
+    0.004332146f, 	0.0006064754f, 	0.01935758f,
+    0.005241609f, 	0.000737004f, 	0.02343758f,
+    0.006333902f, 	0.0008929388f, 	0.02835021f,
+    0.007641137f, 	0.001078166f, 	0.03424588f,
+    0.009199401f, 	0.001296816f, 	0.04129467f,
+    0.01104869f, 	0.001553159f, 	0.04968641f,
+    0.01323262f, 	0.001851463f, 	0.05962964f,
+    0.01579791f, 	0.002195795f, 	0.07134926f,
+    0.01879338f, 	0.002589775f, 	0.08508254f,
+    0.02226949f, 	0.003036799f, 	0.1010753f,
+    0.02627978f, 	0.003541926f, 	0.1195838f,
+    0.03087862f, 	0.004111422f, 	0.1408647f,
+    0.0361189f, 	0.004752618f, 	0.1651644f,
+    0.04204986f, 	0.005474207f, 	0.1927065f,
+    0.04871256f, 	0.006285034f, 	0.2236782f,
+    0.05612868f, 	0.007188068f, 	0.2582109f,
+    0.06429866f, 	0.008181786f, 	0.2963632f,
+    0.07319818f, 	0.009260417f, 	0.3381018f,
+    0.08277331f, 	0.01041303f, 	0.3832822f,
+    0.09295327f, 	0.01162642f, 	0.4316884f,
+    0.1037137f, 	0.01289884f, 	0.483244f,
+    0.115052f, 	0.01423442f, 	0.5379345f,
+    0.1269771f, 	0.0156408f, 	0.595774f,
+    0.1395127f, 	0.01712968f, 	0.6568187f,
+    0.1526661f, 	0.01871265f, 	0.7210459f,
+    0.1663054f, 	0.02038394f, 	0.7878635f,
+    0.1802197f, 	0.02212935f, 	0.8563391f,
+    0.1941448f, 	0.02392985f, 	0.9253017f,
+    0.2077647f, 	0.02576133f, 	0.9933444f,
+    0.2207911f, 	0.02760156f, 	1.059178f,
+    0.2332355f, 	0.02945513f, 	1.122832f,
+    0.2452462f, 	0.03133884f, 	1.184947f,
+    0.2570397f, 	0.03327575f, 	1.246476f,
+    0.2688989f, 	0.03529554f, 	1.308674f,
+    0.2810677f, 	0.03742705f, 	1.372628f,
+    0.2933967f, 	0.03967137f, 	1.437661f,
+    0.3055933f, 	0.04201998f, 	1.502449f,
+    0.3173165f, 	0.04446166f, 	1.565456f,
+    0.3281798f, 	0.04698226f, 	1.62494f,
+    0.3378678f, 	0.04956742f, 	1.679488f,
+    0.3465097f, 	0.05221219f, 	1.729668f,
+    0.3543953f, 	0.05491387f, 	1.776755f,
+    0.3618655f, 	0.05766919f, 	1.822228f,
+    0.3693084f, 	0.06047429f, 	1.867751f,
+    0.3770107f, 	0.06332195f, 	1.914504f,
+    0.384685f, 	0.06619271f, 	1.961055f,
+    0.3918591f, 	0.06906185f, 	2.005136f,
+    0.3980192f, 	0.0719019f, 	2.044296f,
+    0.4026189f, 	0.07468288f, 	2.075946f,
+    0.4052637f, 	0.07738452f, 	2.098231f,
+    0.4062482f, 	0.08003601f, 	2.112591f,
+    0.406066f, 	0.08268524f, 	2.121427f,
+    0.4052283f, 	0.08538745f, 	2.127239f,
+    0.4042529f, 	0.08820537f, 	2.132574f,
+    0.4034808f, 	0.09118925f, 	2.139093f,
+    0.4025362f, 	0.09431041f, 	2.144815f,
+    0.4008675f, 	0.09751346f, 	2.146832f,
+    0.3979327f, 	0.1007349f, 	2.14225f,
+    0.3932139f, 	0.103903f, 	2.128264f,
+    0.3864108f, 	0.1069639f, 	2.103205f,
+    0.3779513f, 	0.1099676f, 	2.069388f,
+    0.3684176f, 	0.1129992f, 	2.03003f,
+    0.3583473f, 	0.1161541f, 	1.988178f,
+    0.3482214f, 	0.1195389f, 	1.946651f,
+    0.338383f, 	0.1232503f, 	1.907521f,
+    0.3288309f, 	0.1273047f, 	1.870689f,
+    0.3194977f, 	0.1316964f, 	1.835578f,
+    0.3103345f, 	0.1364178f, 	1.801657f,
+    0.3013112f, 	0.1414586f, 	1.76844f,
+    0.2923754f, 	0.1468003f, 	1.735338f,
+    0.2833273f, 	0.1524002f, 	1.701254f,
+    0.2739463f, 	0.1582021f, 	1.665053f,
+    0.2640352f, 	0.16414f, 	1.625712f,
+    0.2534221f, 	0.1701373f, 	1.582342f,
+    0.2420135f, 	0.1761233f, 	1.534439f,
+    0.2299346f, 	0.1820896f, 	1.482544f,
+    0.2173617f, 	0.1880463f, 	1.427438f,
+    0.2044672f, 	0.1940065f, 	1.369876f,
+    0.1914176f, 	0.1999859f, 	1.310576f,
+    0.1783672f, 	0.2060054f, 	1.250226f,
+    0.1654407f, 	0.2120981f, 	1.189511f,
+    0.1527391f, 	0.2183041f, 	1.12905f,
+    0.1403439f, 	0.2246686f, 	1.069379f,
+    0.1283167f, 	0.2312426f, 	1.010952f,
+    0.1167124f, 	0.2380741f, 	0.9541809f,
+    0.1056121f, 	0.2451798f, 	0.8995253f,
+    0.09508569f, 	0.2525682f, 	0.847372f,
+    0.08518206f, 	0.2602479f, 	0.7980093f,
+    0.0759312f, 	0.2682271f, 	0.7516389f,
+    0.06733159f, 	0.2765005f, 	0.7082645f,
+    0.05932018f, 	0.2850035f, 	0.6673867f,
+    0.05184106f, 	0.2936475f, 	0.6284798f,
+    0.04486119f, 	0.3023319f, 	0.5911174f,
+    0.0383677f, 	0.3109438f, 	0.5549619f,
+    0.03237296f, 	0.3194105f, 	0.5198843f,
+    0.02692095f, 	0.3278683f, 	0.4862772f,
+    0.0220407f, 	0.3365263f, 	0.4545497f,
+    0.01773951f, 	0.3456176f, 	0.4249955f,
+    0.01400745f, 	0.3554018f, 	0.3978114f,
+    0.01082291f, 	0.3660893f, 	0.3730218f,
+    0.008168996f, 	0.3775857f, 	0.3502618f,
+    0.006044623f, 	0.389696f, 	0.3291407f,
+    0.004462638f, 	0.4021947f, 	0.3093356f,
+    0.00344681f, 	0.4148227f, 	0.2905816f,
+    0.003009513f, 	0.4273539f, 	0.2726773f,
+    0.003090744f, 	0.4398206f, 	0.2555143f,
+    0.003611221f, 	0.452336f, 	0.2390188f,
+    0.004491435f, 	0.4650298f, 	0.2231335f,
+    0.005652072f, 	0.4780482f, 	0.2078158f,
+    0.007035322f, 	0.4915173f, 	0.1930407f,
+    0.008669631f, 	0.5054224f, 	0.1788089f,
+    0.01060755f, 	0.5197057f, 	0.1651287f,
+    0.01290468f, 	0.5343012f, 	0.1520103f,
+    0.01561956f, 	0.5491344f, 	0.1394643f,
+    0.0188164f, 	0.5641302f, 	0.1275353f,
+    0.02256923f, 	0.5792416f, 	0.1163771f,
+    0.02694456f, 	0.5944264f, 	0.1061161f,
+    0.0319991f, 	0.6096388f, 	0.09682266f,
+    0.03778185f, 	0.6248296f, 	0.08852389f,
+    0.04430635f, 	0.6399656f, 	0.08118263f,
+    0.05146516f, 	0.6550943f, 	0.07463132f,
+    0.05912224f, 	0.6702903f, 	0.06870644f,
+    0.0671422f, 	0.6856375f, 	0.06327834f,
+    0.07538941f, 	0.7012292f, 	0.05824484f,
+    0.08376697f, 	0.7171103f, 	0.05353812f,
+    0.09233581f, 	0.7330917f, 	0.04914863f,
+    0.101194f, 	0.7489041f, 	0.04507511f,
+    0.1104362f, 	0.764253f, 	0.04131175f,
+    0.1201511f, 	0.7788199f, 	0.03784916f,
+    0.130396f, 	0.792341f, 	0.03467234f,
+    0.141131f, 	0.804851f, 	0.03175471f,
+    0.1522944f, 	0.8164747f, 	0.02907029f,
+    0.1638288f, 	0.827352f, 	0.02659651f,
+    0.1756832f, 	0.8376358f, 	0.02431375f,
+    0.1878114f, 	0.8474653f, 	0.02220677f,
+    0.2001621f, 	0.8568868f, 	0.02026852f,
+    0.2126822f, 	0.8659242f, 	0.01849246f,
+    0.2253199f, 	0.8746041f, 	0.01687084f,
+    0.2380254f, 	0.8829552f, 	0.01539505f,
+    0.2507787f, 	0.8910274f, 	0.0140545f,
+    0.2636778f, 	0.8989495f, 	0.01283354f,
+    0.2768607f, 	0.9068753f, 	0.01171754f,
+    0.2904792f, 	0.9149652f, 	0.01069415f,
+    0.3046991f, 	0.9233858f, 	0.009753f,
+    0.3196485f, 	0.9322325f, 	0.008886096f,
+    0.3352447f, 	0.9412862f, 	0.008089323f,
+    0.351329f, 	0.9502378f, 	0.007359131f,
+    0.3677148f, 	0.9587647f, 	0.006691736f,
+    0.3841856f, 	0.9665325f, 	0.006083223f,
+    0.4005312f, 	0.9732504f, 	0.005529423f,
+    0.4166669f, 	0.9788415f, 	0.005025504f,
+    0.432542f, 	0.9832867f, 	0.004566879f,
+    0.4481063f, 	0.986572f, 	0.004149405f,
+    0.4633109f, 	0.9886887f, 	0.003769336f,
+    0.478144f, 	0.9897056f, 	0.003423302f,
+    0.4927483f, 	0.9899849f, 	0.003108313f,
+    0.5073315f, 	0.9899624f, 	0.00282165f,
+    0.5221315f, 	0.9900731f, 	0.00256083f,
+    0.537417f, 	0.99075f, 	0.002323578f,
+    0.5534217f, 	0.9922826f, 	0.002107847f,
+    0.5701242f, 	0.9943837f, 	0.001911867f,
+    0.5874093f, 	0.9966221f, 	0.001734006f,
+    0.6051269f, 	0.9985649f, 	0.001572736f,
+    0.6230892f, 	0.9997775f, 	0.001426627f,
+    0.6410999f, 	0.999944f, 	0.001294325f,
+    0.6590659f, 	0.99922f, 	0.001174475f,
+    0.6769436f, 	0.9978793f, 	0.001065842f,
+    0.6947143f, 	0.9961934f, 	0.0009673215f,
+    0.7123849f, 	0.9944304f, 	0.0008779264f,
+    0.7299978f, 	0.9927831f, 	0.0007967847f,
+    0.7476478f, 	0.9911578f, 	0.0007231502f,
+    0.765425f, 	0.9893925f, 	0.0006563501f,
+    0.7834009f, 	0.9873288f, 	0.0005957678f,
+    0.8016277f, 	0.9848127f, 	0.0005408385f,
+    0.8201041f, 	0.9817253f, 	0.0004910441f,
+    0.8386843f, 	0.9780714f, 	0.0004459046f,
+    0.8571936f, 	0.973886f, 	0.0004049826f,
+    0.8754652f, 	0.9692028f, 	0.0003678818f,
+    0.8933408f, 	0.9640545f, 	0.0003342429f,
+    0.9106772f, 	0.9584409f, 	0.0003037407f,
+    0.9273554f, 	0.9522379f, 	0.0002760809f,
+    0.9432502f, 	0.9452968f, 	0.000250997f,
+    0.9582244f, 	0.9374773f, 	0.0002282474f,
+    0.9721304f, 	0.9286495f, 	0.0002076129f,
+    0.9849237f, 	0.9187953f, 	0.0001888948f,
+    0.9970067f, 	0.9083014f, 	0.0001719127f,
+    1.008907f, 	0.8976352f, 	0.000156503f,
+    1.021163f, 	0.8872401f, 	0.0001425177f,
+    1.034327f, 	0.877536f, 	0.000129823f,
+    1.048753f, 	0.868792f, 	0.0001182974f,
+    1.063937f, 	0.8607474f, 	0.000107831f,
+    1.079166f, 	0.8530233f, 	0.00009832455f,
+    1.093723f, 	0.8452535f, 	0.00008968787f,
+    1.106886f, 	0.8370838f, 	0.00008183954f,
+    1.118106f, 	0.8282409f, 	0.00007470582f,
+    1.127493f, 	0.818732f, 	0.00006821991f,
+    1.135317f, 	0.8086352f, 	0.00006232132f,
+    1.141838f, 	0.7980296f, 	0.00005695534f,
+    1.147304f, 	0.786995f, 	0.00005207245f,
+    1.151897f, 	0.775604f, 	0.00004762781f,
+    1.155582f, 	0.7638996f, 	0.00004358082f,
+    1.158284f, 	0.7519157f, 	0.00003989468f,
+    1.159934f, 	0.7396832f, 	0.00003653612f,
+    1.160477f, 	0.7272309f, 	0.00003347499f,
+    1.15989f, 	0.7145878f, 	0.000030684f,
+    1.158259f, 	0.7017926f, 	0.00002813839f,
+    1.155692f, 	0.6888866f, 	0.00002581574f,
+    1.152293f, 	0.6759103f, 	0.00002369574f,
+    1.148163f, 	0.6629035f, 	0.00002175998f,
+    1.143345f, 	0.6498911f, 	0.00001999179f,
+    1.137685f, 	0.636841f, 	0.00001837603f,
+    1.130993f, 	0.6237092f, 	0.00001689896f,
+    1.123097f, 	0.6104541f, 	0.00001554815f,
+    1.113846f, 	0.5970375f, 	0.00001431231f,
+    1.103152f, 	0.5834395f, 	0.00001318119f,
+    1.091121f, 	0.5697044f, 	0.00001214548f,
+    1.077902f, 	0.5558892f, 	0.00001119673f,
+    1.063644f, 	0.5420475f, 	0.00001032727f,
+    1.048485f, 	0.5282296f, 	0.00000953013f,
+    1.032546f, 	0.5144746f, 	0.000008798979f,
+    1.01587f, 	0.5007881f, 	0.000008128065f,
+    0.9984859f, 	0.4871687f, 	0.00000751216f,
+    0.9804227f, 	0.473616f, 	0.000006946506f,
+    0.9617111f, 	0.4601308f, 	0.000006426776f,
+    0.9424119f, 	0.446726f, 	0.0f,
+    0.9227049f, 	0.4334589f, 	0.0f,
+    0.9027804f, 	0.4203919f, 	0.0f,
+    0.8828123f, 	0.407581f, 	0.0f,
+    0.8629581f, 	0.3950755f, 	0.0f,
+    0.8432731f, 	0.3828894f, 	0.0f,
+    0.8234742f, 	0.370919f, 	0.0f,
+    0.8032342f, 	0.3590447f, 	0.0f,
+    0.7822715f, 	0.3471615f, 	0.0f,
+    0.7603498f, 	0.3351794f, 	0.0f,
+    0.7373739f, 	0.3230562f, 	0.0f,
+    0.713647f, 	0.3108859f, 	0.0f,
+    0.6895336f, 	0.298784f, 	0.0f,
+    0.6653567f, 	0.2868527f, 	0.0f,
+    0.6413984f, 	0.2751807f, 	0.0f,
+    0.6178723f, 	0.2638343f, 	0.0f,
+    0.5948484f, 	0.252833f, 	0.0f,
+    0.57236f, 	0.2421835f, 	0.0f,
+    0.5504353f, 	0.2318904f, 	0.0f,
+    0.5290979f, 	0.2219564f, 	0.0f,
+    0.5083728f, 	0.2123826f, 	0.0f,
+    0.4883006f, 	0.2031698f, 	0.0f,
+    0.4689171f, 	0.1943179f, 	0.0f,
+    0.4502486f, 	0.185825f, 	0.0f,
+    0.4323126f, 	0.1776882f, 	0.0f,
+    0.415079f, 	0.1698926f, 	0.0f,
+    0.3983657f, 	0.1623822f, 	0.0f,
+    0.3819846f, 	0.1550986f, 	0.0f,
+    0.3657821f, 	0.1479918f, 	0.0f,
+    0.3496358f, 	0.1410203f, 	0.0f,
+    0.3334937f, 	0.1341614f, 	0.0f,
+    0.3174776f, 	0.1274401f, 	0.0f,
+    0.3017298f, 	0.1208887f, 	0.0f,
+    0.2863684f, 	0.1145345f, 	0.0f,
+    0.27149f, 	0.1083996f, 	0.0f,
+    0.2571632f, 	0.1025007f, 	0.0f,
+    0.2434102f, 	0.09684588f, 	0.0f,
+    0.2302389f, 	0.09143944f, 	0.0f,
+    0.2176527f, 	0.08628318f, 	0.0f,
+    0.2056507f, 	0.08137687f, 	0.0f,
+    0.1942251f, 	0.07671708f, 	0.0f,
+    0.183353f, 	0.07229404f, 	0.0f,
+    0.1730097f, 	0.06809696f, 	0.0f,
+    0.1631716f, 	0.06411549f, 	0.0f,
+    0.1538163f, 	0.06033976f, 	0.0f,
+    0.144923f, 	0.05676054f, 	0.0f,
+    0.1364729f, 	0.05336992f, 	0.0f,
+    0.1284483f, 	0.05016027f, 	0.0f,
+    0.120832f, 	0.04712405f, 	0.0f,
+    0.1136072f, 	0.04425383f, 	0.0f,
+    0.1067579f, 	0.04154205f, 	0.0f,
+    0.1002685f, 	0.03898042f, 	0.0f,
+    0.09412394f, 	0.03656091f, 	0.0f,
+    0.08830929f, 	0.03427597f, 	0.0f,
+    0.0828101f, 	0.03211852f, 	0.0f,
+    0.07761208f, 	0.03008192f, 	0.0f,
+    0.07270064f, 	0.02816001f, 	0.0f,
+    0.06806167f, 	0.02634698f, 	0.0f,
+    0.06368176f, 	0.02463731f, 	0.0f,
+    0.05954815f, 	0.02302574f, 	0.0f,
+    0.05564917f, 	0.02150743f, 	0.0f,
+    0.05197543f, 	0.02007838f, 	0.0f,
+    0.04851788f, 	0.01873474f, 	0.0f,
+    0.04526737f, 	0.01747269f, 	0.0f,
+    0.04221473f, 	0.01628841f, 	0.0f,
+    0.03934954f, 	0.01517767f, 	0.0f,
+    0.0366573f, 	0.01413473f, 	0.0f,
+    0.03412407f, 	0.01315408f, 	0.0f,
+    0.03173768f, 	0.01223092f, 	0.0f,
+    0.02948752f, 	0.01136106f, 	0.0f,
+    0.02736717f, 	0.0105419f, 	0.0f,
+    0.02538113f, 	0.00977505f, 	0.0f,
+    0.02353356f, 	0.009061962f, 	0.0f,
+    0.02182558f, 	0.008402962f, 	0.0f,
+    0.0202559f, 	0.007797457f, 	0.0f,
+    0.01881892f, 	0.00724323f, 	0.0f,
+    0.0174993f, 	0.006734381f, 	0.0f,
+    0.01628167f, 	0.006265001f, 	0.0f,
+    0.01515301f, 	0.005830085f, 	0.0f,
+    0.0141023f, 	0.005425391f, 	0.0f,
+    0.01312106f, 	0.005047634f, 	0.0f,
+    0.01220509f, 	0.00469514f, 	0.0f,
+    0.01135114f, 	0.004366592f, 	0.0f,
+    0.01055593f, 	0.004060685f, 	0.0f,
+    0.009816228f, 	0.00377614f, 	0.0f,
+    0.009128517f, 	0.003511578f, 	0.0f,
+    0.008488116f, 	0.003265211f, 	0.0f,
+    0.007890589f, 	0.003035344f, 	0.0f,
+    0.007332061f, 	0.002820496f, 	0.0f,
+    0.006809147f, 	0.002619372f, 	0.0f,
+    0.006319204f, 	0.00243096f, 	0.0f,
+    0.005861036f, 	0.002254796f, 	0.0f,
+    0.005433624f, 	0.002090489f, 	0.0f,
+    0.005035802f, 	0.001937586f, 	0.0f,
+    0.004666298f, 	0.001795595f, 	0.0f,
+    0.00432375f, 	0.001663989f, 	0.0f,
+    0.004006709f, 	0.001542195f, 	0.0f,
+    0.003713708f, 	0.001429639f, 	0.0f,
+    0.003443294f, 	0.001325752f, 	0.0f,
+    0.003194041f, 	0.00122998f, 	0.0f,
+    0.002964424f, 	0.001141734f, 	0.0f,
+    0.002752492f, 	0.001060269f, 	0.0f,
+    0.002556406f, 	0.0009848854f, 	0.0f,
+    0.002374564f, 	0.0009149703f, 	0.0f,
+    0.002205568f, 	0.0008499903f, 	0.0f,
+    0.002048294f, 	0.0007895158f, 	0.0f,
+    0.001902113f, 	0.0007333038f, 	0.0f,
+    0.001766485f, 	0.0006811458f, 	0.0f,
+    0.001640857f, 	0.0006328287f, 	0.0f,
+    0.001524672f, 	0.0005881375f, 	0.0f,
+    0.001417322f, 	0.0005468389f, 	0.0f,
+    0.001318031f, 	0.0005086349f, 	0.0f,
+    0.001226059f, 	0.0004732403f, 	0.0f,
+    0.001140743f, 	0.0004404016f, 	0.0f,
+    0.001061495f, 	0.0004098928f, 	0.0f,
+    0.0009877949f, 	0.0003815137f, 	0.0f,
+    0.0009191847f, 	0.0003550902f, 	0.0f,
+    0.0008552568f, 	0.0003304668f, 	0.0f,
+    0.0007956433f, 	0.000307503f, 	0.0f,
+    0.000740012f, 	0.0002860718f, 	0.0f,
+    0.000688098f, 	0.0002660718f, 	0.0f,
+    0.0006397864f, 	0.0002474586f, 	0.0f,
+    0.0005949726f, 	0.0002301919f, 	0.0f,
+    0.0005535291f, 	0.0002142225f, 	0.0f,
+    0.0005153113f, 	0.0001994949f, 	0.0f,
+    0.0004801234f, 	0.0001859336f, 	0.0f,
+    0.0004476245f, 	0.0001734067f, 	0.0f,
+    0.0004174846f, 	0.0001617865f, 	0.0f,
+    0.0003894221f, 	0.0001509641f, 	0.0f,
+    0.0003631969f, 	0.0001408466f, 	0.0f,
+    0.0003386279f, 	0.0001313642f, 	0.0f,
+    0.0003156452f, 	0.0001224905f, 	0.0f,
+    0.0002941966f, 	0.000114206f, 	0.0f,
+    0.0002742235f, 	0.0001064886f, 	0.0f,
+    0.0002556624f, 	0.00009931439f, 	0.0f,
+    0.000238439f, 	0.00009265512f, 	0.0f,
+    0.0002224525f, 	0.00008647225f, 	0.0f,
+    0.0002076036f, 	0.0000807278f, 	0.0f,
+    0.0001938018f, 	0.00007538716f, 	0.0f,
+    0.0001809649f, 	0.00007041878f, 	0.0f,
+    0.0001690167f, 	0.00006579338f, 	0.0f,
+    0.0001578839f, 	0.0000614825f, 	0.0f,
+    0.0001474993f, 	0.00005746008f, 	0.0f,
+    0.0001378026f, 	0.00005370272f, 	0.0f,
+    0.0001287394f, 	0.00005018934f, 	0.0f,
+    0.0001202644f, 	0.00004690245f, 	0.0f,
+    0.0001123502f, 	0.00004383167f, 	0.0f,
+    0.0001049725f, 	0.0000409678f, 	0.0f,
+    0.00009810596f, 	0.00003830123f, 	0.0f,
+    0.00009172477f, 	0.00003582218f, 	0.0f,
+    0.00008579861f, 	0.00003351903f, 	0.0f,
+    0.00008028174f, 	0.00003137419f, 	0.0f,
+    0.00007513013f, 	0.00002937068f, 	0.0f,
+    0.00007030565f, 	0.0000274938f, 	0.0f,
+    0.00006577532f, 	0.00002573083f, 	0.0f,
+    0.00006151508f, 	0.00002407249f, 	0.0f,
+    0.00005752025f, 	0.00002251704f, 	0.0f,
+    0.00005378813f, 	0.0000210635f, 	0.0f,
+    0.0000503135f, 	0.00001970991f, 	0.0f,
+    0.00004708916f, 	0.00001845353f, 	0.0f,
+    0.00004410322f, 	0.00001728979f, 	0.0f,
+    0.0000413315f, 	0.00001620928f, 	0.0f,
+    0.00003874992f, 	0.00001520262f, 	0.0f,
+    0.00003633762f, 	0.00001426169f, 	0.0f,
+    0.00003407653f, 	0.00001337946f, 	0.0f,
+    0.00003195242f, 	0.00001255038f, 	0.0f,
+    0.00002995808f, 	0.00001177169f, 	0.0f,
+    0.00002808781f, 	0.00001104118f, 	0.0f,
+    0.00002633581f, 	0.00001035662f, 	0.0f,
+    0.0000246963f, 	0.000009715798f, 	0.0f,
+    0.00002316311f, 	0.000009116316f, 	0.0f,
+    0.00002172855f, 	0.000008555201f, 	0.0f,
+    0.00002038519f, 	0.000008029561f, 	0.0f,
+    0.00001912625f, 	0.000007536768f, 	0.0f,
+    0.00001794555f, 	0.000007074424f, 	0.0f,
+    0.00001683776f, 	0.000006640464f, 	0.0f,
+    0.00001579907f, 	0.000006233437f, 	0.0f,
+    0.00001482604f, 	0.000005852035f, 	0.0f,
+    0.00001391527f, 	0.000005494963f, 	0.0f,
+    0.00001306345f, 	0.000005160948f, 	0.0f,
+    0.0000122672f, 	0.000004848687f, 	0.0f,
+    0.00001152279f, 	0.000004556705f, 	0.0f,
+    0.00001082663f, 	0.00000428358f, 	0.0f,
+    0.0000101754f, 	0.000004027993f, 	0.0f,
+    0.000009565993f, 	0.000003788729f, 	0.0f,
+    0.000008995405f, 	0.000003564599f, 	0.0f,
+    0.000008460253f, 	0.000003354285f, 	0.0f,
+    0.000007957382f, 	0.000003156557f, 	0.0f,
+    0.000007483997f, 	0.000002970326f, 	0.0f,
+    0.000007037621f, 	0.000002794625f, 	0.0f,
+    0.000006616311f, 	0.000002628701f, 	0.0f,
+    0.000006219265f, 	0.000002472248f, 	0.0f,
+    0.000005845844f, 	0.00000232503f, 	0.0f,
+    0.000005495311f, 	0.000002186768f, 	0.0f,
+    0.000005166853f, 	0.000002057152f, 	0.0f,
+    0.000004859511f, 	0.000001935813f, 	0.0f,
+    0.000004571973f, 	0.000001822239f, 	0.0f,
+    0.00000430292f, 	0.000001715914f, 	0.0f,
+    0.000004051121f, 	0.000001616355f, 	0.0f,
+    0.000003815429f, 	0.000001523114f, 	0.0f,
+    0.000003594719f, 	0.00000143575f, 	0.0f,
+    0.000003387736f, 	0.000001353771f, 	0.0f,
+    0.000003193301f, 	0.000001276714f, 	0.0f,
+    0.000003010363f, 	0.000001204166f, 	0.0f,
+    0.00000283798f, 	0.000001135758f, 	0.0f,
+    0.000002675365f, 	0.000001071181f, 	0.0f,
+    0.00000252202f, 	0.000001010243f, 	0.0f,
+    0.000002377511f, 	0.0000009527779f, 	0.0f,
+    0.000002241417f, 	0.0000008986224f, 	0.0f,
+    0.000002113325f, 	0.0000008476168f, 	0.0f,
+    0.00000199283f, 	0.0000007996052f, 	0.0f,
+    0.000001879542f, 	0.0000007544361f, 	0.0f,
+    0.000001773083f, 	0.0000007119624f, 	0.0f,
+    0.000001673086f, 	0.0000006720421f, 	0.0f,
+    0.000001579199f, 	0.000000634538f, 	0.0f
+};
+
 std::vector<char> ReadFile(const std::string& filename) {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
@@ -312,23 +831,108 @@ const VkAllocationCallbacks* pAllocator) {
 	}
 }
 
-namespace ManageSDL{
-    void SDLHandleEvents(bool& isRunning, bool& isFrameBufferResized) {
-        SDL_Event event;
+void world1(Camera& camera, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<lens>& lenses, std::vector<material>& materials) {
+	// Camera
+	camera.pos = glm::vec3(6.332f, 3.855f, 3.140f);
+	camera.angle = glm::vec2(225.093f, -31.512f);
+	camera.ISO = 1600;
+	camera.size = 0.057f;
+	camera.apertureSize = 0.0025f;
+	camera.apertureDist = 0.049f;
+	camera.lensRadius = 0.0100f;
+	camera.lensFocalLength = 0.0300f;
+	camera.lensThickness = 0.0000f;
+	camera.lensDistance = 0.050f;
 
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                isRunning = false;
-            }
+	// Spheres
+	sphere sphere1 = { { 0.0f, 1.0f, 0.0f }, 1.0f, 1 };
+	sphere sphere2 = { { 5.0f, 1.0f, -1.0f }, 1.0f, 2 };
+	sphere sphere3 = { { 0.0f, 4.0f, -3.0f }, 1.0f, 3 };
+	spheres.push_back(sphere1);
+	spheres.push_back(sphere2);
+	spheres.push_back(sphere3);
 
-			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isFrameBufferResized)) {
-				isFrameBufferResized = true;
-			}
+	// Planes
+	plane plane1 = { { 0.0f, 0.0f, 0.0f }, 1 };
+	planes.push_back(plane1);
 
-			ImGui_ImplSDL2_ProcessEvent(&event);
-        }
-    }
+	// Boxes
+	box box1 = { { 3.0f, 0.75f, 1.0f }, { 0.0f, 58.31f, 0.0f }, { 1.5f, 1.5f, 1.5f }, 1 };
+	boxes.push_back(box1);
+	
+	// Lenses
+	lens lens1 = { { 5.0f, 1.2f, -4.0f }, { 0.0f, 0.0f, 0.0f }, 1.2f, 1.0f, 0.0f, true, 1 };
+	lenses.push_back(lens1);
+
+	// Materials
+	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
+	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 12.5f } };
+	materials.push_back(material1);
+	materials.push_back(material2);
+	materials.push_back(material3);
 }
+
+float SpectralPowerDistribution(float l, float l_peak, float d, float invert) {
+	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
+	// Using Gaussian Function To Predict Spectral Radiance
+	// In Reality, Spectral Radiance Function Has Different Shapes For Different Objects Also Looks Much Different Than This
+	float x = (l - l_peak) / (2.0f * d * d);
+	float radiance = exp(-x * x);
+	radiance = glm::mix(radiance, 1.0f - radiance, invert);
+
+	return radiance;
+}
+
+float BlackBodyRadiation(float l, float T) {
+	// Plank's Law
+	return (1.1910429724e-16f * pow(l, -5.0f)) / (exp(0.014387768775f / (l * T)) - 1.0f);
+}
+
+float BlackBodyRadiationPeak(float T) {
+	// Derived By Substituting Wien's Displacement Law On Plank's Law
+	return 4.0956746759e-6f * pow(T, 5.0f);
+}
+
+float Reinhard(float x) {
+	// x / (1 + x)
+	return x / (1.0f + x);
+}
+
+// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+float ACESFilm(float x) {
+	// x(ax + b) / (x(cx + d) + e)
+	float a = 2.51f;
+	float b = 0.03f;
+	float c = 2.43f;
+	float d = 0.59f;
+	float e = 0.14f;
+
+	return x * (a * x + b) / (x * (c * x + d) + e);
+}
+
+// DEUCES Biophotometric Tonemap by Ted(Kerdek)
+float DEUCESBioPhotometric(float x) {
+	// e^(-0.25 / x)
+	return exp(-0.25f / x);
+}
+
+float tonemapping(float x, int tonemap) {
+	if (tonemap == 1) {
+		x = Reinhard(x);
+	}
+
+	if (tonemap == 2) {
+		x = ACESFilm(x);
+	}
+
+	if (tonemap == 3) {
+		x = DEUCESBioPhotometric(x);
+	}
+
+	return x;
+}
+
 
 class App {
 public:
@@ -375,33 +979,51 @@ private:
 	VkBuffer indexBuffer;
 	VkDeviceMemory indexBufferMemory;
 
-	VkBuffer uniformBuffer;
-	VkDeviceMemory uniformBufferMemory;
-	void* uniformBufferMapped;
-	UniformBufferObject dummyUniform;
+	std::vector<VkBuffer> uniformBuffers;
+	std::vector<VkDeviceMemory> uniformBuffersMemory;
+	std::vector<void*> uniformBuffersMapped;
+	UniformBufferObject ubo;
 
 	VkImage rendererImage;
+	VkFormat rendererImageFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
 	VkDeviceMemory rendererImageMemory;
 	VkImageView rendererImageView;
 	VkSampler rendererImageSampler;
 
 	VkDescriptorPool descriptorPool;
-	VkDescriptorSet descriptorSet;
+	std::vector<VkDescriptorSet> descriptorSets;
 
 	PushConstantValues pushConstant;
 
-	VkCommandBuffer commandBuffer;
+	std::vector<VkCommandBuffer> commandBuffers;
 
-	VkSemaphore imageAvailableSemaphore;
-	VkSemaphore renderFinishedSemaphore;
-	VkFence inFlightFence;
+	std::vector<VkSemaphore> imageAvailableSemaphores;
+	std::vector<VkSemaphore> renderFinishedSemaphores;
+	std::vector<VkFence> inFlightFences;
 
 	VkDescriptorPool imguiDescriptorPool;
 	ImGuiIO* io;
 
 	bool isViewPortResized = false;
+	bool isReset = true;
+	bool isUpdateUBO = true;
 
-	int frame = 0;
+	uint32_t currentFrame = 0;
+	int samplesPerFrame = 1;
+	int frame = samplesPerFrame;
+	int samples = samplesPerFrame;
+	float FPS = 60.0f;
+
+	float persistence = 0.0625f;
+	int pathLength = 5;
+	int tonemap = TONEMAP;
+
+	std::vector<sphere> spheres;
+	std::vector<plane> planes;
+	std::vector<box> boxes;
+	std::vector<lens> lenses;
+	std::vector<material> materials;
+	Camera camera{};
 
     void InitWindow() {
         SDL_Init(SDL_INIT_VIDEO);
@@ -628,13 +1250,13 @@ private:
 		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
 		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
-			score += 100;
+			score = 100;
 		}
 		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU) {
-			score += 300;
+			score = 300;
 		}
 		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-			score += 1000;
+			score = 1000;
 		}
 
 		if (!IsDeviceSuitable(device)) {
@@ -682,9 +1304,15 @@ private:
 		}
 
 		VkPhysicalDeviceFeatures deviceFeatures{};
+		deviceFeatures.shaderFloat64 = VK_TRUE;
+
+		VkPhysicalDeviceUniformBufferStandardLayoutFeatures UBOLayoutFeatures{};
+		UBOLayoutFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES;
+		UBOLayoutFeatures.uniformBufferStandardLayout = VK_TRUE;
 
 		VkDeviceCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		createInfo.pNext = &UBOLayoutFeatures;
 		createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
 		createInfo.pQueueCreateInfos = queueCreateInfos.data();
 		createInfo.pEnabledFeatures = &deviceFeatures;
@@ -881,7 +1509,7 @@ private:
 		std::array<VkSubpassDependency, 2> dependency{};
 		VkRenderPassCreateInfo createInfo{};
 
-		colorAttachments[0].format = swapChainImageFormat;
+		colorAttachments[0].format = rendererImageFormat;
 		colorAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 		colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1251,11 +1879,17 @@ private:
 	void CreateUniformBuffer() {
 		VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
-		CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-		uniformBuffer, uniformBufferMemory);
+		uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+		uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+		uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
-		vkMapMemory(device, uniformBufferMemory, 0, bufferSize, 0, &uniformBufferMapped);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+			uniformBuffers[i], uniformBuffersMemory[i]);
+
+			vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
+		}
 	}
 
 	void CreateRendererImage() {
@@ -1267,7 +1901,7 @@ private:
 		createInfo.extent.depth = 1;
 		createInfo.mipLevels = 1;
 		createInfo.arrayLayers = 1;
-		createInfo.format = swapChainImageFormat;
+		createInfo.format = rendererImageFormat;
 		createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 		createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		createInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -1298,7 +1932,7 @@ private:
 		VkImageViewCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		createInfo.format = swapChainImageFormat;
+		createInfo.format = rendererImageFormat;
 		createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -1356,15 +1990,15 @@ private:
 		VkDescriptorPoolCreateInfo poolInfo{};
 
 		poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		poolSize[0].descriptorCount = 1;
+		poolSize[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
 		poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSize[1].descriptorCount = 1;
+		poolSize[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSize.size());
 		poolInfo.pPoolSizes = poolSize.data();
-		poolInfo.maxSets = 1;
+		poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
 		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create Descriptor Pool!");
@@ -1372,78 +2006,91 @@ private:
 	}
 
 	void UpdateDescriptorSet() {
-		std::array<VkWriteDescriptorSet, 2> descriptorWrite{};
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			std::array<VkWriteDescriptorSet, 2> descriptorWrite{};
 
-		VkDescriptorBufferInfo bufferInfo{};
-		bufferInfo.buffer = uniformBuffer;
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformBufferObject);
+			VkDescriptorBufferInfo bufferInfo{};
+			bufferInfo.buffer = uniformBuffers[i];
+			bufferInfo.offset = 0;
+			bufferInfo.range = sizeof(UniformBufferObject);
 
-		descriptorWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite[0].dstSet = descriptorSet;
-		descriptorWrite[0].dstBinding = 0;
-		descriptorWrite[0].dstArrayElement = 0;
-		descriptorWrite[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptorWrite[0].descriptorCount = 1;
-		descriptorWrite[0].pBufferInfo = &bufferInfo;
-		descriptorWrite[0].pImageInfo = nullptr;
-		descriptorWrite[0].pTexelBufferView = nullptr;
+			descriptorWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWrite[0].dstSet = descriptorSets[i];
+			descriptorWrite[0].dstBinding = 0;
+			descriptorWrite[0].dstArrayElement = 0;
+			descriptorWrite[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			descriptorWrite[0].descriptorCount = 1;
+			descriptorWrite[0].pBufferInfo = &bufferInfo;
+			descriptorWrite[0].pImageInfo = nullptr;
+			descriptorWrite[0].pTexelBufferView = nullptr;
 
-		VkDescriptorImageInfo imageInfo{};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-		imageInfo.imageView = rendererImageView;
-		imageInfo.sampler = rendererImageSampler;
+			VkDescriptorImageInfo imageInfo{};
+			imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+			imageInfo.imageView = rendererImageView;
+			imageInfo.sampler = rendererImageSampler;
 
-		descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite[1].dstSet = descriptorSet;
-		descriptorWrite[1].dstBinding = 1;
-		descriptorWrite[1].dstArrayElement = 0;
-		descriptorWrite[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		descriptorWrite[1].descriptorCount = 1;
-		descriptorWrite[1].pBufferInfo = nullptr;
-		descriptorWrite[1].pImageInfo = &imageInfo;
-		descriptorWrite[1].pTexelBufferView = nullptr;
+			descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWrite[1].dstSet = descriptorSets[i];
+			descriptorWrite[1].dstBinding = 1;
+			descriptorWrite[1].dstArrayElement = 0;
+			descriptorWrite[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			descriptorWrite[1].descriptorCount = 1;
+			descriptorWrite[1].pBufferInfo = nullptr;
+			descriptorWrite[1].pImageInfo = &imageInfo;
+			descriptorWrite[1].pTexelBufferView = nullptr;
 
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrite.size()), descriptorWrite.data(), 0, nullptr);
+			vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrite.size()), descriptorWrite.data(), 0, nullptr);
+		}
 	}
 
 	void CreateDescriptorSet() {
 		VkDescriptorSetAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocateInfo.descriptorPool = descriptorPool;
-		allocateInfo.descriptorSetCount = 1;
-		allocateInfo.pSetLayouts = &descriptorSetLayout;
+		allocateInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+		std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+		allocateInfo.pSetLayouts = layouts.data();
 
-		if (vkAllocateDescriptorSets(device, &allocateInfo, &descriptorSet) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Allocate Uniform Buffer Descriptor Sets!");
+		descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+		if (vkAllocateDescriptorSets(device, &allocateInfo, descriptorSets.data()) != VK_SUCCESS) {
+			throw std::runtime_error("Failed To Allocate Descriptor Sets!");
 		}
 
 		UpdateDescriptorSet();
 	}
 
 	void CreateCommandBuffer() {
+		commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+
 		VkCommandBufferAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocateInfo.commandPool = commandPool;
 		allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		allocateInfo.commandBufferCount = 1;
+		allocateInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 
-		if (vkAllocateCommandBuffers(device, &allocateInfo, &commandBuffer) != VK_SUCCESS) {
+		if (vkAllocateCommandBuffers(device, &allocateInfo, commandBuffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Allocate Command Buffers!");
 		}
 	}
 
 	void CreateSyncObjects() {
+		imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+		renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+		inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+
 		VkSemaphoreCreateInfo semaphoreInfo{};
 		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
 		VkFenceCreateInfo fenceInfo{};
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-		if ((vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS) || 
-		(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS) || 
-		(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS)) {
-			throw std::runtime_error("Failed To Create Sync Objects For A Frame!");
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			if ((vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS) || 
+			(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS) || 
+			(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS)) {
+				throw std::runtime_error("Failed To Create Sync Objects For A Frame!");
+			}
 		}
 	}
 
@@ -1472,7 +2119,7 @@ private:
 		CreateSyncObjects();
     }
 
-	void CreateImGuiDescriptorPool() {
+	void InitImGui() {
 		VkDescriptorPoolSize poolSize[] = 
 		{
 			{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
@@ -1498,9 +2145,7 @@ private:
 		if(vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Create ImGui Descriptor Pool!");
 		}
-	}
 
-	void InitImGuiLib() {
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
 		io = &ImGui::GetIO(); (void)io;
@@ -1528,9 +2173,81 @@ private:
 		ImGui_ImplVulkan_CreateFontsTexture();
 	}
 
-	void InitImGui() {
-		CreateImGuiDescriptorPool();
-		InitImGuiLib();
+	void SDLHandleEvents(bool& isRunning, glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isWindowFocused) {
+        SDL_Event event;
+
+        while (SDL_PollEvent(&event)) {
+			ImGui_ImplSDL2_ProcessEvent(&event);
+
+            if (event.type == SDL_QUIT) {
+                isRunning = false;
+            }
+
+			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isViewPortResized)) {
+				isViewPortResized = true;
+			}
+        }
+
+		glm::vec2 cursorPos1 = glm::vec2((float)(ImGui::GetMousePos().x) / (float)W, (float)(H - ImGui::GetMousePos().y) / (float)H);
+
+		if (!isWindowFocused) {
+			if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+				isReset = true;
+				glm::vec2 dxdy = cursorPos1 - cursorPos;
+				cameraAngle = cameraAngle - (360.0f * dxdy);
+				if (cameraAngle.x > 360.0f) {
+					cameraAngle.x = cameraAngle.x - 360.0f;
+				}
+				if (cameraAngle.x < 0.0f) {
+					cameraAngle.x = 360.0f + cameraAngle.x;
+				}
+				if (cameraAngle.y > 90.0f) {
+					cameraAngle.y = 90.0f;
+				}
+				if (cameraAngle.y < -90.0f) {
+					cameraAngle.y = -90.0f;
+				}
+			}
+		}
+
+		cursorPos = cursorPos1;
+
+		deltaCamPos.x = ((float)(ImGui::IsKeyDown(ImGuiKey_D)) - (float)(ImGui::IsKeyDown(ImGuiKey_A)));
+		deltaCamPos.y = ((float)(ImGui::IsKeyDown(ImGuiKey_E)) - (float)(ImGui::IsKeyDown(ImGuiKey_Q)));
+		deltaCamPos.z = ((float)(ImGui::IsKeyDown(ImGuiKey_W)) - (float)(ImGui::IsKeyDown(ImGuiKey_S)));
+
+		if ((deltaCamPos.x != 0.0f) || (deltaCamPos.y != 0.0f) || (deltaCamPos.z != 0.0f)) {
+			isReset = true;
+		}
+    }
+
+	void UpdateCameraPos(glm::vec3& cameraPos, glm::vec2 cameraAngle, glm::vec3 deltaCamPos) {
+		// http://www.songho.ca/opengl/gl_anglestoaxes.html
+		glm::vec2 theta = glm::vec2(-cameraAngle.y, cameraAngle.x);
+		glm::mat3 mX = glm::mat3(1.0f, 0.0f, 0.0f, 0.0f, glm::cos(theta.x), -glm::sin(theta.x), 0.0f, glm::sin(theta.x), glm::cos(theta.x));
+		glm::mat3 mY = glm::mat3(glm::cos(theta.y), 0.0f, glm::sin(theta.y), 0.0f, 1.0f, 0.0f, -glm::sin(theta.y), 0.0f, glm::cos(theta.y));
+		glm::mat3 m = mX * mY;
+
+		cameraPos = cameraPos + deltaCamPos * m;
+	}
+
+	void ItemsTable(const char* name, int& selection, int id, int size) {
+		for (int i = id; i < (size + id); i++) {
+			ImGui::PushID(i);
+			ImGui::TableNextRow();
+			char label[32];
+			sprintf_s(label, name, i - id + 1);
+			ImGui::TableSetColumnIndex(0);
+			bool isSelected = selection == i;
+
+			if (ImGui::Selectable(label, &isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+				if (isSelected) {
+					selection = i;
+				}
+			}
+
+			ImGui::PopID();
+		}
 	}
 
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
@@ -1577,7 +2294,7 @@ private:
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, 
-		pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+		pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
 		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstant), &pushConstant);
 
@@ -1630,28 +2347,132 @@ private:
 	}
 
 	void UpdateUniformBuffer() {
-		for (int i = 0; i < 25; i++) {
-			dummyUniform.dummy[i] = glm::vec4(glm::ivec4(4*i+1, 4*i+2, 4*i+3, 4*i+4)) * 0.01f;
-		}
+		if (isUpdateUBO) {
+			std::array<float, 4> numObjects;
+			std::vector<float> objectsArray;
+			std::vector<float> materialsArray;
 
-		memcpy(uniformBufferMapped, &dummyUniform, sizeof(dummyUniform));
+			numObjects[0] = (float)spheres.size();
+			numObjects[1] = (float)planes.size();
+			numObjects[2] = (float)boxes.size();
+			numObjects[3] = (float)lenses.size();
+
+			for (size_t i = 0; i < numObjects.size(); i++) {
+				ubo.numObjects[i] = numObjects[i];
+			}
+
+			for (int i = 0; i < spheres.size(); i++) {
+				objectsArray.push_back(spheres[i].pos[0]);
+				objectsArray.push_back(spheres[i].pos[1]);
+				objectsArray.push_back(spheres[i].pos[2]);
+				objectsArray.push_back(spheres[i].radius);
+				objectsArray.push_back((float)spheres[i].materialID);
+			}
+
+			for (int i = 0; i < planes.size(); i++) {
+				objectsArray.push_back(planes[i].pos[0]);
+				objectsArray.push_back(planes[i].pos[1]);
+				objectsArray.push_back(planes[i].pos[2]);
+				objectsArray.push_back((float)planes[i].materialID);
+			}
+
+			for (int i = 0; i < boxes.size(); i++) {
+				objectsArray.push_back(boxes[i].pos[0]);
+				objectsArray.push_back(boxes[i].pos[1]);
+				objectsArray.push_back(boxes[i].pos[2]);
+				objectsArray.push_back(boxes[i].rotation[0]);
+				objectsArray.push_back(boxes[i].rotation[1]);
+				objectsArray.push_back(boxes[i].rotation[2]);
+				objectsArray.push_back(boxes[i].size[0]);
+				objectsArray.push_back(boxes[i].size[1]);
+				objectsArray.push_back(boxes[i].size[2]);
+				objectsArray.push_back((float)boxes[i].materialID);
+			}
+
+			for (int i = 0; i < lenses.size(); i++) {
+				objectsArray.push_back(lenses[i].pos[0]);
+				objectsArray.push_back(lenses[i].pos[1]);
+				objectsArray.push_back(lenses[i].pos[2]);
+				objectsArray.push_back(lenses[i].rotation[0]);
+				objectsArray.push_back(lenses[i].rotation[1]);
+				objectsArray.push_back(lenses[i].rotation[2]);
+				objectsArray.push_back(lenses[i].radius);
+				objectsArray.push_back(lenses[i].focalLength);
+				objectsArray.push_back(lenses[i].thickness);
+				objectsArray.push_back((float)lenses[i].isConverging);
+				objectsArray.push_back((float)lenses[i].materialID);
+			}
+
+			for (int i = 0; i < 1024; i++) {
+				if (objectsArray.size() > i) {
+					ubo.objects[i] = objectsArray[i];
+				} else {
+					ubo.objects[i] = 0.0f;
+				}
+			}
+
+			for (int i = 0; i < materials.size(); i++) {
+				materialsArray.push_back(materials[i].reflection[0]);
+				materialsArray.push_back(materials[i].reflection[1]);
+				materialsArray.push_back(materials[i].reflection[2]);
+				materialsArray.push_back(materials[i].emission[0]);
+				materialsArray.push_back(materials[i].emission[1]);
+			}
+
+			for (int i = 0; i < 128; i++) {
+				if (materialsArray.size() > i) {
+					ubo.materials[i] = materialsArray[i];
+				} else {
+					ubo.materials[i] = 0.0f;
+				}
+			}
+
+			for (int i = 0; i < 1323; i++) {
+				ubo.CIEXYZ2006[i] = CIEXYZ2006[i];
+			}
+
+			for (size_t k = 0; k < MAX_FRAMES_IN_FLIGHT; k++) {
+				memcpy(uniformBuffersMapped[k], &ubo, sizeof(ubo));
+			}
+
+			isUpdateUBO = false;
+		}
 	}
 
 	void UpdatePushConstant() {
-		pushConstant.resolution = glm::vec2(W, H);
+		pushConstant.resolution = glm::ivec2(W, H);
 		pushConstant.frame = frame;
+		pushConstant.samples = samples;
+		pushConstant.samplesPerFrame = samplesPerFrame;
+		pushConstant.FPS = FPS;
+		pushConstant.persistence = persistence;
+		pushConstant.pathLength = pathLength;
+		pushConstant.cameraAngle = glm::vec2(-camera.angle.y, camera.angle.x);
+		pushConstant.cameraPosX = camera.pos.x;
+		pushConstant.cameraPosY = camera.pos.y;
+		pushConstant.cameraPosZ = camera.pos.z;
+		pushConstant.ISO = camera.ISO;
+		pushConstant.cameraSize = camera.size;
+		pushConstant.apertureSize = camera.apertureSize;
+		pushConstant.apertureDist = camera.apertureDist;
+		pushConstant.lensRadius = camera.lensRadius;
+		pushConstant.lensFocalLength = camera.lensFocalLength;
+		pushConstant.lensThickness = camera.lensThickness;
+		pushConstant.lensDistance = camera.lensDistance;
+		pushConstant.tonemap = tonemap;
 	}
 
 	void DrawFrame() {
-		vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
 		uint32_t imageIndex;
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, 
-		imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+		imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			RecreateImages();
-			frame = 1;
+			frame = samplesPerFrame;
+			samples = samplesPerFrame;
 			return;
 		} else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)) {
 			throw std::runtime_error("Failed To Acquire Swap Chain Image!");
@@ -1660,24 +2481,24 @@ private:
 		UpdateUniformBuffer();
 		UpdatePushConstant();
 
-		vkResetFences(device, 1, &inFlightFence);
-		vkResetCommandBuffer(commandBuffer, 0);
-		RecordCommandBuffer(commandBuffer, imageIndex);
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+		vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+		RecordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
+		VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
 		VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 		submitInfo.waitSemaphoreCount = 1;
 		submitInfo.pWaitSemaphores = waitSemaphores;
 		submitInfo.pWaitDstStageMask = waitStages;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &commandBuffer;
-		VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+		submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
+		VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = signalSemaphores;
 
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Submit Draw Command Buffer!");
 		}
 
@@ -1697,20 +2518,37 @@ private:
 			isViewPortResized = false;
 			RecreateImages();
 			frame = 0;
+			samples = 0;
 		} else if (result != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Present Swap Chain Image!");
 		}
+
+		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
     
     void MainLoop() {
         bool isRunning = true;
-		float FPS = 60.0f;
+		bool isWindowFocused = false;
+
+		glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
+		glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
+
 		std::vector<float> frames;
+		std::vector<float> spectra;
+		std::vector<float> tonemapGraph;
+
+		sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
+		plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
+		box newbox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1 };
+		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, true, 1 };
+		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+
+		world1(camera, spheres, planes, boxes, lenses, materials);
 
         while (isRunning) {
-            ManageSDL::SDLHandleEvents(isRunning, isViewPortResized);
-
-			frame += 1;
+            SDLHandleEvents(isRunning, cursorPos, camera.angle, deltaCamPos, isWindowFocused);
+			deltaCamPos *= 3.0f / FPS;
+			UpdateCameraPos(camera.pos, glm::radians(camera.angle), deltaCamPos);
 
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplSDL2_NewFrame();
@@ -1723,12 +2561,184 @@ private:
 				ImGui::SetWindowPos(ImVec2(W - ImGui::GetWindowWidth(), 0));
 				ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
 				ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
+				ImGui::Text("Samples: %i", samples);
+				ImGui::Text("Camera Angle: (%0.3f, %0.3f)", camera.angle.x, camera.angle.y);
+				ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", camera.pos.x, camera.pos.y, camera.pos.z);
+				isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
+				isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
+				ImGui::Separator();
+
+				if (ImGui::CollapsingHeader("Post Processing")) {
+					if (ImGui::BeginTable("Tonemap Table", 1)) {
+						ImGui::TableSetupColumn("Tonemap");
+						ImGui::TableHeadersRow();
+						ItemsTable("None", tonemap, 0, 1);
+						ItemsTable("Reinhard", tonemap, 1, 1);
+						ItemsTable("ACES Film", tonemap, 2, 1);
+						ItemsTable("DEUCES", tonemap, 3, 1);
+						ImGui::EndTable();
+					}
+					tonemapGraph.clear();
+					for (int i = 1; i < 101; i++) {
+						float x = 0.01f * (float)i;
+						tonemapGraph.push_back(tonemapping(x, tonemap));
+					}
+
+					ImGui::PlotLines("", tonemapGraph.data(), (int)tonemapGraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+				}
+
+				if (ImGui::CollapsingHeader("Camera")) {
+					isReset |= ImGui::DragFloat("Persistence", &persistence, 0.00025f, 0.00025f, 1.0f, "%0.5f");
+					isReset |= ImGui::DragInt("ISO", &camera.ISO, 50, 50, 819200);
+					isReset |= ImGui::DragFloat("Camera Size", &camera.size, 0.001f, 0.001f, 5.0f, "%0.3f");
+					isReset |= ImGui::DragFloat("Aperture Size", &camera.apertureSize, 0.0001f, 0.0001f, 10.0f, "%0.4f");
+					isReset |= ImGui::DragFloat("Aperture Dist", &camera.apertureDist, 0.001f, 0.001f, camera.lensDistance, "%0.3f");
+					float fov = 2.0f * glm::degrees(::atan(0.5f * camera.size / camera.apertureDist));
+					ImGui::Text("FOV: %0.0f", fov);
+					ImGui::Separator();
+
+					ImGui::Text("Lens");
+					isReset |= ImGui::DragFloat("Radius", &camera.lensRadius, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+					isReset |= ImGui::DragFloat("Focal Length", &camera.lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+					isReset |= ImGui::DragFloat("Thickness", &camera.lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
+					isReset |= ImGui::DragFloat("Distance", &camera.lensDistance, 0.001f, 0.001f, 100.0f, "%0.3f");
+				}
+				ImGui::Separator();
+
+				if (ImGui::CollapsingHeader("Objects")) {
+					static int objectsSelection = 0;
+
+					if (ImGui::Button("Add New Sphere")) {
+						spheres.push_back(newsphere);
+					}
+					if (ImGui::Button("Add New Plane")) {
+						planes.push_back(newplane);
+					}
+					if (ImGui::Button("Add New Box")) {
+						boxes.push_back(newbox);
+					}
+					if (ImGui::Button("Add New Lens")) {
+						lenses.push_back(newlens);
+					}
+					ImGui::Separator();
+
+					int numObjs = 0;
+					if ((objectsSelection < (numObjs + spheres.size())) && (objectsSelection > (numObjs - 1))) {
+						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectsSelection - numObjs + 1);
+						isUpdateUBO |= ImGui::DragFloat3("Position", spheres[objectsSelection - numObjs].pos, 0.01f);
+						isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[objectsSelection - numObjs].radius, 0.01f);
+						isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[objectsSelection - numObjs].materialID, 0.02f);
+					}
+					numObjs += (int)spheres.size();
+
+					if ((objectsSelection < (numObjs + planes.size())) && (objectsSelection > (numObjs - 1))) {
+						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectsSelection - numObjs + 1);
+						isUpdateUBO |= ImGui::DragFloat3("Position", planes[objectsSelection - numObjs].pos, 0.01f);
+						isUpdateUBO |= ImGui::DragInt("Material ID", &planes[objectsSelection - numObjs].materialID, 0.02f);
+					}
+					numObjs += (int)planes.size();
+
+					if ((objectsSelection < (numObjs + boxes.size())) && (objectsSelection > (numObjs - 1))) {
+						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", objectsSelection - numObjs + 1);
+						isUpdateUBO |= ImGui::DragFloat3("Position", boxes[objectsSelection - numObjs].pos, 0.01f);
+						isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[objectsSelection - numObjs].rotation, 0.1f);
+						isUpdateUBO |= ImGui::DragFloat3("Size", boxes[objectsSelection - numObjs].size, 0.01f);
+						isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[objectsSelection - numObjs].materialID, 0.02f);
+					}
+					numObjs += (int)boxes.size();
+
+					if ((objectsSelection < (numObjs + lenses.size())) && (objectsSelection > (numObjs - 1))) {
+						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", objectsSelection - numObjs + 1);
+						isUpdateUBO |= ImGui::DragFloat3("Position", lenses[objectsSelection - numObjs].pos, 0.01f);
+						isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[objectsSelection - numObjs].rotation, 0.1f);
+						isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[objectsSelection - numObjs].radius, 0.001f);
+						isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[objectsSelection - numObjs].focalLength, 0.001f);
+						isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[objectsSelection - numObjs].thickness, 0.001f);
+						isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[objectsSelection - numObjs].isConverging);
+						isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[objectsSelection - numObjs].materialID, 0.02f);
+					}
+					numObjs += (int)lenses.size();
+					ImGui::Separator();
+
+					if (ImGui::BeginTable("Objects Table", 1)) {
+						ImGui::TableSetupColumn("Object");
+						ImGui::TableHeadersRow();
+						ItemsTable("Sphere %i", objectsSelection, 0, (int)spheres.size());
+						ItemsTable("Plane %i", objectsSelection, (int)(spheres.size()), (int)planes.size());
+						ItemsTable("Box %i", objectsSelection, (int)(spheres.size() + planes.size()), (int)boxes.size());
+						ItemsTable("Lens %i", objectsSelection, (int)(spheres.size() + planes.size() + boxes.size()), (int)lenses.size());
+						ImGui::EndTable();
+					}
+				}
+				ImGui::Separator();
+
+				if (ImGui::CollapsingHeader("Materials")) {
+					static int materialsSelection = 0;
+
+					if (ImGui::Button("Add New Material")) {
+						materials.push_back(newmaterial);
+						isUpdateUBO = true;
+					}
+					ImGui::Separator();
+
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialsSelection + 1);
+					ImGui::Text("Reflection");
+					ImGui::PushID("Reflection");
+					spectra.clear();
+					for (int i = 1; i < 101; i++) {
+						float x = 0.01f * float(i) * 330.0f + 390.0f;
+						spectra.push_back(SpectralPowerDistribution(x, materials[materialsSelection].reflection[0], 
+						materials[materialsSelection].reflection[1], materials[materialsSelection].reflection[2]));
+					}
+
+					ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+					isUpdateUBO |= ImGui::DragFloat("Peak Lambda", &materials[materialsSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
+					isUpdateUBO |= ImGui::DragFloat("Sigma", &materials[materialsSelection].reflection[1], 0.5f, 0.0f, 100.0f);
+					bool isInvertBool;
+					isInvertBool = (bool)materials[materialsSelection].reflection[2];
+					isUpdateUBO |= ImGui::Checkbox("Invert", &isInvertBool);
+					materials[materialsSelection].reflection[2] = (float)isInvertBool;
+					ImGui::PopID();
+
+					ImGui::Text("Emission");
+					ImGui::PushID("Emission");
+					spectra.clear();
+					for (int i = 1; i < 101; i++) {
+						float x = float(i) * 12e-9f;
+						spectra.push_back(BlackBodyRadiation(x, materials[materialsSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialsSelection].emission[0]));
+					}
+
+					ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+					isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialsSelection].emission[0], 5.0f);
+					isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialsSelection].emission[1], 0.1f);
+					ImGui::PopID();
+					ImGui::Separator();
+
+					if (ImGui::BeginTable("Materials Table", 1)) {
+						ImGui::TableSetupColumn("Materials");
+						ImGui::TableHeadersRow();
+						ItemsTable("Material %i", materialsSelection, 0, (int)materials.size());
+						ImGui::EndTable();
+					}
+				}
+
+				isWindowFocused = ImGui::IsWindowFocused();
 				ImGui::End();
 			}
 
 			ImGui::Render();
 
+			isReset |= isUpdateUBO;
+
 			DrawFrame();
+
+			frame += samplesPerFrame;
+			if (isReset) {
+				samples = samplesPerFrame;
+				isReset = false;
+			} else {
+				samples += samplesPerFrame;
+			}
 
 			FPS = 1.0f / io->DeltaTime;
 			if (frames.size() > 100) {
@@ -1749,11 +2759,15 @@ private:
 		CleanUpImages();
 
 		ImGui_ImplVulkan_Shutdown();
+		ImGui_ImplSDL2_Shutdown();
+		ImGui::DestroyContext();
 
 		vkDestroySampler(device, rendererImageSampler, nullptr);
 
-		vkDestroyBuffer(device, uniformBuffer, nullptr);
-		vkFreeMemory(device, uniformBufferMemory, nullptr);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+			vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+		}
 
 		vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -1766,9 +2780,11 @@ private:
 		vkDestroyBuffer(device, vertexBuffer, nullptr);
 		vkFreeMemory(device, vertexBufferMemory, nullptr);
 
-		vkDestroyFence(device, inFlightFence, nullptr);
-		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			vkDestroyFence(device, inFlightFences[i], nullptr);
+			vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+			vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+		}
 
 		vkDestroyCommandPool(device, commandPool, nullptr);
 
