@@ -6,10 +6,16 @@
 
 precision highp float;
 
+#define MAXDIST 1e5
+#define PI 3.141592653589792623810034526344
+#define ONEBYTHREE 0.3333333
+#define MAX_OBJECTS_SIZE 1024
+#define MAX_MATERIALS_SIZE 1024
+
 layout(set = 0, binding = 0, std430) uniform ubo {
 	float numObjects[4];
-	float objects[1024];
-	float materials[512];
+	float objects[MAX_OBJECTS_SIZE];
+	float materials[MAX_MATERIALS_SIZE];
 	float CIEXYZ2006[1323];
 };
 
@@ -40,10 +46,6 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) out vec4 rendererColor;
 layout(location = 1) out vec4 processorColor;
-
-#define MAXDIST 1e5
-#define PI 3.141592653589792623810034526344
-#define ONEBYTHREE 0.3333333
 
 struct Ray {
 	vec3 origin;
@@ -95,13 +97,13 @@ struct material {
 vec3 cameraPos = vec3(cameraPosX, cameraPosY, cameraPosZ);
 
 vec3 WaveToXYZ(in float wave) {
-	// Conversion From Wavelength To XYZ Using CIE1964 XYZ Table
-	vec3 XYZ = vec3(0.0, 0.0, 0.0);
-	if ((wave >= 390) && (wave <= 830)){
+	// Conversion From Wavelength To XYZ Using CIEXYZ2006 Table
+	vec3 XYZ = vec3(0.0);
+	if ((wave >= 390.0) && (wave <= 830.0)){
 		// Finding The Appropriate Index Of The Table For Given Wavelength
-		int index = int((floor(wave) - 390.0));
-		vec3 t1 = vec3(CIEXYZ2006[3*index], CIEXYZ2006[3*index+1], CIEXYZ2006[3*index+2]);
-		vec3 t2 = vec3(CIEXYZ2006[3*index+3], CIEXYZ2006[3*index+4], CIEXYZ2006[3*index+5]);
+		int index3 = 3 * int(floor(wave) - 390.0);
+		vec3 t1 = vec3(CIEXYZ2006[index3], CIEXYZ2006[index3+1], CIEXYZ2006[index3+2]);
+		vec3 t2 = vec3(CIEXYZ2006[index3+3], CIEXYZ2006[index3+4], CIEXYZ2006[index3+5]);
 		XYZ = mix(t1, t2, wave - floor(wave));
 	}
 	return XYZ;
@@ -119,15 +121,50 @@ mat3 RotationMatrix(in vec3 angle) {
 	return mX * mY * mZ;
 }
 
-material GetMaterial(in int index) {
-	// Extract Material Data From The Materials List
-	material material;
-	material.reflection.x = materials[5*index];
-	material.reflection.y = materials[5*index+1];
-	material.reflection.z = materials[5*index+2];
-	material.emission.x = materials[5*index+3];
-	material.emission.y = materials[5*index+4];
-	return material;
+void UnpackSphere(inout sphere object, in int index) {
+	// Unpack Sphere From Objects Array
+	index *= 5;
+	object.pos = vec3(objects[index], objects[index+1], objects[index+2]);
+	object.radius = objects[index+3];
+	object.materialID = int(objects[index+4])-1;
+}
+
+void UnpackPlane(inout plane object, in int index, in int offset) {
+	// Unpack Plane From Objects Array
+	index *= 4;
+	object.pos = vec3(objects[index+offset], objects[index+1+offset], objects[index+2+offset]);
+	object.materialID = int(objects[index+3+offset])-1;
+}
+
+void UnpackBox(inout box object, in int index, in int offset) {
+	// Unpack Box From Objects Array
+	index *= 10;
+	object.pos = vec3(objects[index+offset], objects[index+1+offset], objects[index+2+offset]);
+	object.rotation = vec3(objects[index+3+offset], objects[index+4+offset], objects[index+5+offset]);
+	object.size = vec3(objects[index+6+offset], objects[index+7+offset], objects[index+8+offset]);
+	object.materialID = int(objects[index+9+offset])-1;
+}
+
+void UnpackLens(inout lens object, in int index, in int offset) {
+	// Unpack Lens From Objects Array
+	index *= 11;
+	object.pos = vec3(objects[index+offset], objects[index+1+offset], objects[index+2+offset]);
+	object.rotation = vec3(objects[index+3+offset], objects[index+4+offset], objects[index+5+offset]);
+	object.radius = objects[index+6+offset];
+	object.focalLength = objects[index+7+offset];
+	object.thickness = objects[index+8+offset];
+	object.isConverging = bool(objects[index+9+offset]);
+	object.materialID = int(objects[index+10+offset])-1;
+}
+
+void UnpackMaterial(inout material mat, in int index) {
+	// Unpack Material From Materials Array
+	index *= 5;
+	mat.reflection.x = materials[index];
+	mat.reflection.y = materials[index+1];
+	mat.reflection.z = materials[index+2];
+	mat.emission.x = materials[index+3];
+	mat.emission.y = materials[index+4];
 }
 
 void SortMinMax(inout vec3 t1, inout vec3 t2) {
@@ -166,7 +203,7 @@ bool RayIntersectAABB(in vec3 origin, in vec3 invdir, in box object) {
 	return true;
 }
 
-bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout vec3 normal, inout material mat) {
+bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout vec3 normal, inout int materialID) {
 	// Ray-Intersection Of Sphere
 	// Built By Solving The Equation: x^2 + y^2 + z^2 = r^2
 	vec3 localorigin = ray.origin - object.pos;
@@ -189,13 +226,13 @@ bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout
 	if (t < hitdist) {
 		hitdist = t;
 		normal = normalize(fma(ray.dir, vec3(t), localorigin) * isOutside);
-		mat = GetMaterial(object.materialID);
+		materialID = object.materialID;
 		return true;
 	}
 	return false;
 }
 
-bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout vec3 normal, inout material mat) {
+bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout vec3 normal, inout int materialID) {
 	// Ray-Intersection Of Plane
 	// Built By Solving The Equation: z = 0
 	vec3 localorigin = ray.origin - object.pos;
@@ -206,13 +243,13 @@ bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout v
 	if (t < hitdist) {
 		hitdist = t;
 		normal = faceforward(vec3(0.0, 1.0, 0.0), ray.dir, vec3(0.0, 1.0, 0.0));
-		mat = GetMaterial(object.materialID);
+		materialID = object.materialID;
 		return true;
 	}
 	return false;
 }
 
-bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout material mat) {
+bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout int materialID) {
 	// Ray-Intersection Of Box
 	mat3 matrix = RotationMatrix(object.rotation);
 	vec3 localorigin = (ray.origin - object.pos) * matrix;
@@ -234,13 +271,13 @@ bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 
 		// The Signed Component Of p Which Has Highest Magnitude Is The Normal
 		vec3 p = abs(localorigin + ray.dir * t);
 		normal = matrix * (step(max(max(p.x, p.y), p.z), p) * -sign(ray.dir));
-		mat = GetMaterial(object.materialID);
+		materialID = object.materialID;
 		return true;
 	}
 	return false;
 }
 
-bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSlicePos, in bool isSideInvert, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat) {
+bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSlicePos, in bool isSideInvert, inout float hitdist, inout vec3 normal, inout int isOutside, inout int materialID) {
 	// Ray-Intersection Of Sliced Sphere
 	// Slicing Based On Parameters Slice Size And Slice Side
 	// Slicing Is Done Using 1D Interval Checks
@@ -286,13 +323,13 @@ bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSl
 		hitdist = t;
 		normal = matrix * normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOut);
 		isOutside = (!isSideInvert) ? isOut : -isOut;
-		mat = GetMaterial(object.materialID);
+		materialID = object.materialID;
 		return true;
 	}
 	return false;
 }
 
-void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec3 normal, inout int isOutside, inout material mat) {
+void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec3 normal, inout int isOutside, inout int materialID) {
 	// Ray-Intersection Of Lens
 	// Done By Joining Two Slices Of Sphere
 	// Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
@@ -310,35 +347,35 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
 		slice.is1stSlice = lensSlicePart[i];
 		slice.rotation = object.rotation;
 		slice.materialID = object.materialID;
-		SphereSliceIntersection(ray, slice, lensSlicePos, !object.isConverging, hitdist, normal, isOutside, mat);
+		SphereSliceIntersection(ray, slice, lensSlicePos, !object.isConverging, hitdist, normal, isOutside, materialID);
 	}
 }
 
-float evalQuadratic(in float a, in float b, in float c, in float x) {
+float EvalQuadratic(in float a, in float b, in float c, in float x) {
 	return x * (x * a + b) + c;
 }
 
-vec3 evalQuadratic(in float a, in float b, in float c, in vec3 x) {
+vec3 EvalQuadratic(in float a, in float b, in float c, in vec3 x) {
 	return x * (x * a + b) + c;
 }
 
-float evalCubic(in float a, in float b, in float c, in float d, in float x) {
+float EvalCubic(in float a, in float b, in float c, in float d, in float x) {
 	return x * (x * (x * a + b) + c) + d;
 }
 
-vec2 evalCubic(in float a, in float b, in float c, in float d, in vec2 x) {
+vec2 EvalCubic(in float a, in float b, in float c, in float d, in vec2 x) {
 	return x * (x * (x * a + b) + c) + d;
 }
 
-vec3 evalCubic(in float a, in float b, in float c, in float d, in vec3 x) {
+vec3 EvalCubic(in float a, in float b, in float c, in float d, in vec3 x) {
 	return x * (x * (x * a + b) + c) + d;
 }
 
-vec2 evalQuartic(in float a, in float b, in float c, in float d, in float e, in vec2 x) {
+vec2 EvalQuartic(in float a, in float b, in float c, in float d, in float e, in vec2 x) {
 	return x * (x * (x * (x * a + b) + c) + d) + e;
 }
 
-bvec3 solveCubic(in float b, in float c, in float d, inout vec3 roots) {
+bvec3 SolveCubic(in float b, in float c, in float d, inout vec3 roots) {
     // https://arxiv.org/abs/1903.10041
     // Solves Cubic Equation By Combining Two Different Methods To Find Real Roots
     float bdiv3 = b * ONEBYTHREE;
@@ -354,7 +391,7 @@ bvec3 solveCubic(in float b, in float c, in float d, inout vec3 roots) {
 		roots.x = S + T - bdiv3;
 		// Apply Newton Raphson Method 2 Times To Increase The Accuracy
 		for (int i = 0; i < 2; i++) {
-			roots.x -= evalCubic(1.0, b, c, d, roots.x) / evalQuadratic(3.0, 2.0 * b, c, roots.x);
+			roots.x -= EvalCubic(1.0, b, c, d, roots.x) / EvalQuadratic(3.0, 2.0 * b, c, roots.x);
 		}
 		return bvec3(true, false, false);
 	}
@@ -364,12 +401,12 @@ bvec3 solveCubic(in float b, in float c, in float d, inout vec3 roots) {
 	roots = 2.0 * sqrtnegQ * vec3(cos(thetadiv3), cos(thetadiv3 + TWOPIBYTHREE), cos(fma(2.0, TWOPIBYTHREE, thetadiv3))) - bdiv3;
 	// Apply Newton Raphson Method 2 Times To Increase The Accuracy
 	for (int i = 0; i < 2; i++) {
-		roots -= evalCubic(1.0, b, c, d, roots) / evalQuadratic(3.0, 2.0 * b, c, roots);
+		roots -= EvalCubic(1.0, b, c, d, roots) / EvalQuadratic(3.0, 2.0 * b, c, roots);
 	}
 	return bvec3(true);
 }
 
-bvec4 solveQuartic(in float a, in float b, in float c, in float d, in float e, inout vec4 roots) {
+bvec4 SolveQuartic(in float a, in float b, in float c, in float d, in float e, inout vec4 roots) {
     // https://www.mdpi.com/2227-7390/10/14/2377
 	// Solves Quartic Equation By Using The Method Given In The Above Paper
     float inva = 1.0 / a;
@@ -380,7 +417,7 @@ bvec4 solveQuartic(in float a, in float b, in float c, in float d, in float e, i
     float q = bb * b * inva2a2 * inva2 - b * c * inva * inva2 + d * inva;
     float r = -0.1875 * bb * bb * inva2a2 * inva2a2 + 0.5 * c * bb * inva2a2 * inva2 - b * d * inva2a2 + e * inva;
 	vec3 s = vec3(0.0);
-    solveCubic(0.5 * -p, -r, 0.5 * p * r - 0.125 * q * q, s);
+    SolveCubic(0.5 * -p, -r, 0.5 * p * r - 0.125 * q * q, s);
     float s2subp = 2.0 * s.x - p;
 	if (s2subp < 0.0) {
 		return bvec4(false);
@@ -395,19 +432,19 @@ bvec4 solveQuartic(in float a, in float b, in float c, in float d, in float e, i
 	if (invaddq2div >= 0.0) {
 		roots.xy = 0.5 * (-sqrts2subp + vec2(1.0, -1.0) * sqrt(invaddq2div)) - bdiv4a;
 		// Apply Newton Raphson Method To Increase The Accuracy
-		roots.xy -= evalQuartic(a, b, c, d, e, roots.xy) / evalCubic(4.0 * a, 3.0 * b, 2.0 * c, d, roots.xy);
+		roots.xy -= EvalQuartic(a, b, c, d, e, roots.xy) / EvalCubic(4.0 * a, 3.0 * b, 2.0 * c, d, roots.xy);
 		isReal.xy = bvec2(true);
 	}
 	if (invsubq2div >= 0.0) {
 		roots.zw = 0.5 * (sqrts2subp + vec2(1.0, -1.0) * sqrt(invsubq2div)) - bdiv4a;
 		// Apply Newton Raphson Method To Increase The Accuracy
-		roots.zw -= evalQuartic(a, b, c, d, e, roots.zw) / evalCubic(4.0 * a, 3.0 * b, 2.0 * c, d, roots.zw);
+		roots.zw -= EvalQuartic(a, b, c, d, e, roots.zw) / EvalCubic(4.0 * a, 3.0 * b, 2.0 * c, d, roots.zw);
 		isReal.zw = bvec2(true);
 	}
 	return isReal;
 }
 
-bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout material mat) {
+bool Thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout int materialID) {
 	// Equation: x^2(x^2 + 2y^2 - 6y + 2z^2) + y^2(y^2 + 2y + 2z^2) + z^2(10z^2 - 12) + 1 = 0
 	// Substitute Light Ray Equation Into This Equation To Get The Polynomial In Terms Of t, Substitution Has Been Done Manually, Then Solve For t Using The Quartic Equation Solver.
 	if (!BoundingSphere(ray, vec3(0.0, 0.0, 0.0), 4.05)) {
@@ -422,7 +459,7 @@ bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout materi
 	float a0 = dot(vec3(o.x, o.y, 10.0 * o.z), o * o * o) + 2.0 * dot(o.xxy * o.xxy, o.yzz * o.yzz) + 2.0 * o.y * o.y * o.y - 6.0 * o.x * o.x * o.y - 12.0 * o.z * o.z + 1.0;
 
 	vec4 roots = vec4(0.0);
-	bvec4 isReal = solveQuartic(a4, a3, a2, a1, a0, roots);
+	bvec4 isReal = SolveQuartic(a4, a3, a2, a1, a0, roots);
 
 	float t = 1e6;
 	for (int i = 0; i < 4; i++) {
@@ -444,7 +481,7 @@ bool thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout materi
 		normal.y = 40.0 * z * z * z + 4.0 * x * x * z + 4.0 * y * y * z - 24.0 * z;
 		normal.z = 4.0 * y * y * y + 4.0 * x * x * y - 6.0 * x * x + 6.0 * y * y + 4.0 * y * z * z;
 		normal = normalize(normal);
-		mat = GetMaterial(1);
+		materialID = 1;
 		return true;
 	}
 	return false;
@@ -491,59 +528,52 @@ float RayMarching(in Ray ray, inout float hitdist) {
 	return heatmap;
 }
 
-float Intersection(in Ray ray, inout vec3 normal, inout material mat) {
+float Intersection(in Ray ray, inout vec3 normal, inout int materialID) {
 	// Finds The Ray-Intersection Of Every Object In The Scene
-	float hitdist = 1e6;
+	float hitdist = MAXDIST;
 	int offset = 0;
+
 	// Iterate Over All The Spheres In The Scene
 	for (int i = 0; i < numObjects[0]; i++) {
 		sphere object;
-		object.pos = vec3(objects[5*i+offset], objects[5*i+1+offset], objects[5*i+2+offset]);
-		object.radius = objects[5*i+3+offset];
-		object.materialID = int(objects[5*i+4+offset])-1;
-		SphereIntersection(ray, object, hitdist, normal, mat);
+		UnpackSphere(object, i);
+		SphereIntersection(ray, object, hitdist, normal, materialID);
 	}
 	offset += 5*int(numObjects[0]);
+
 	// Iterate Over All The Planes In The Scene
 	for (int i = 0; i < numObjects[1]; i++) {
 		plane object;
-		object.pos = vec3(objects[4*i+offset], objects[4*i+1+offset], objects[4*i+2+offset]);
-		object.materialID = int(objects[4*i+3+offset])-1;
-		PlaneIntersection(ray, object, hitdist, normal, mat);
+		UnpackPlane(object, i, offset);
+		PlaneIntersection(ray, object, hitdist, normal, materialID);
 	}
 	offset += 4*int(numObjects[1]);
+
 	// Iterate Over All The Cubes In The Scene
 	for (int i = 0; i < numObjects[2]; i++) {
 		box object;
-		object.pos = vec3(objects[10*i+offset], objects[10*i+1+offset], objects[10*i+2+offset]);
-		object.rotation = vec3(objects[10*i+3+offset], objects[10*i+4+offset], objects[10*i+5+offset]);
-		object.size = vec3(objects[10*i+6+offset], objects[10*i+7+offset], objects[10*i+8+offset]);
-		object.materialID = int(objects[10*i+9+offset])-1;
+		UnpackBox(object, i, offset);
 		if (!BoundingSphere(ray, object.pos, 0.25 * dot(object.size, object.size))) {
 			continue;
 		}
-		BoxIntersection(ray, object, hitdist, normal, mat);
+		BoxIntersection(ray, object, hitdist, normal, materialID);
 	}
 	offset += 10*int(numObjects[2]);
+
 	// Iterate Over All The Lenses In The Scene
 	for (int i = 0; i < numObjects[3]; i++) {
 		lens object;
-		object.pos = vec3(objects[11*i+offset], objects[11*i+1+offset], objects[11*i+2+offset]);
-		object.rotation = vec3(objects[11*i+3+offset], objects[11*i+4+offset], objects[11*i+5+offset]);
-		object.radius = objects[11*i+6+offset];
-		object.focalLength = objects[11*i+7+offset];
-		object.thickness = objects[11*i+8+offset];
-		object.isConverging = bool(objects[11*i+9+offset]);
-		object.materialID = int(objects[11*i+10+offset])-1;
+		UnpackLens(object, i, offset);
 		int isOutside = 1;
 		if (!BoundingSphere(ray, object.pos, object.radius * object.radius)) {
 			continue;
 		}
-		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
+		LensIntersection(ray, object, hitdist, normal, isOutside, materialID);
 	}
 	offset += 11*int(numObjects[3]);
+
 	ray.origin -= vec3(1.0, 1.06, -7.0);
-	thritorius(ray, hitdist, normal, mat);
+	Thritorius(ray, hitdist, normal, materialID);
 
 	return hitdist;
 }
@@ -560,14 +590,14 @@ float RandomFloat(inout uint seed) {
 	return float(seed) / 0xFFFFFFFFu;
 }
 
-uint GenerateSeed(in uvec2 xy, in uint k) {
+uint GenerateSeed(in uvec2 xy, in int k) {
 	// Actually This Is Not The Correct Way To Generate Seed
 	// This Is The Correct Implementation Which Has No Overlapping:
 	/* uint seed = (resolution.x * resolution.y) * (frame - samplesPerFrame + k);
 	   seed += xy.x + resolution.x * xy.y;*/
 	// But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
 	// That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result
-	uint seed = frame - samplesPerFrame + k;
+	uint seed = uint(frame - samplesPerFrame + k);
 	PCG32(seed);
 	seed += xy.x + resolution.x * xy.y;
 	return seed;
@@ -578,7 +608,7 @@ float SampleSpectra(in float start, in float end, in float rand){
 	return (end - start) * rand + start;
 }
 
-float InvSpectraPDF(in float start, in float end){
+float InverseSpectraPDF(in float start, in float end){
 	// Inverse Of Uniform PDF
 	return end - start;
 }
@@ -684,8 +714,10 @@ float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint 
 	// Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
 	float radiance = 0.0;
 	vec3 normal = vec3(0.0);
+	int materialID = 0;
+	float hitdist = Intersection(inRay, normal, materialID);
 	material mat;
-	float hitdist = Intersection(inRay, normal, mat);
+	UnpackMaterial(mat, materialID);
 	Ray outRay = inRay;
 	if (hitdist < MAXDIST) {
 		// Calculate The Next Ray's Origin And Direction
@@ -749,8 +781,8 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 		float hitdist = 1e6;
 		vec3 normal = vec3(0.0);
 		int isOutside = 1;
-		material mat;
-		LensIntersection(ray, object, hitdist, normal, isOutside, mat);
+		int materialID = 0;
+		LensIntersection(ray, object, hitdist, normal, isOutside, materialID);
 		// Calculate The Refractive Index
 		float n1 = 1.0;
 		float n2 = 1.0;
@@ -771,7 +803,7 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 	}
 }
 
-vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
+vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
 	uint seed = GenerateSeed(xy, k);
 	// SSAA
 	uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
@@ -796,8 +828,8 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in uint k) {
 	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
 	// Ray Passes Through The Lens Here
 	TracePathLens(l, ray, forwardDir);
-	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InvSpectraPDF(390.0, 720.0);
-	//float hitdist = 1e5;
+	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InverseSpectraPDF(390.0, 720.0);
+	//float hitdist = MAXDIST;
 	//float heatmap = RayMarching(ray, hitdist);
 	//color += heatmap;
 
@@ -816,7 +848,8 @@ void Accumulate(in vec3 inColor, inout vec3 outColor) {
 		float weight = pow(2.0, -8.0 / (FPS * persistence));
 		outColor = ((1.0 - weight) * outColor) + (weight * inColor);
 	} else {
-		outColor = ((samples - 1) * inColor + outColor) / samples;
+		int unitSamples = samples / samplesPerFrame;
+		outColor = ((unitSamples - 1) * inColor + outColor) / unitSamples;
 	}
 }
 
@@ -825,7 +858,7 @@ vec3 Rendering(in vec3 inColor) {
 	vec2 uv = ((2.0 * vec2(xy) - resolution) / resolution.y);
 
 	vec3 outColor = vec3(0.0);
-	for (uint i = 0; i < samplesPerFrame; i++) {
+	for (int i = 0; i < samplesPerFrame; i++) {
 		outColor += Scene(xy, uv, i);
 	}
 	outColor /= samplesPerFrame;

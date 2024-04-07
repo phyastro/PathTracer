@@ -31,6 +31,8 @@ const int PATHLENGTH = 10000;
 const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 
 #define ISDEBUG
+#define MAX_OBJECTS_SIZE 1024
+#define MAX_MATERIALS_SIZE 1024
 
 #ifdef ISDEBUG
 const bool isValidationLayersEnabled = true;
@@ -138,10 +140,10 @@ struct Camera {
 };
 
 struct UniformBufferObject {
-	alignas(16) float numObjects[4];
-	alignas(16) float objects[1024];
-	alignas(16) float materials[512];
-	alignas(16) float CIEXYZ2006[1323];
+	float numObjects[4];
+	float packedObjects[MAX_OBJECTS_SIZE];
+	float packedMaterials[MAX_MATERIALS_SIZE];
+	float CIEXYZ2006[1323];
 };
 
 struct PushConstantValues {
@@ -1876,6 +1878,18 @@ private:
 	}
 
 	void CreateUniformBuffer() {
+		for (int i = 0; i < MAX_OBJECTS_SIZE; i++) {
+			ubo.packedObjects[i] = 0.0f;
+		}
+
+		for (int i = 0; i < MAX_MATERIALS_SIZE; i++) {
+			ubo.packedMaterials[i] = 0.0f;
+		}
+
+		for (int i = 0; i < std::size(CIEXYZ2006); i++) {
+			ubo.CIEXYZ2006[i] = CIEXYZ2006[i];
+		}
+
 		VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
 		uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -2402,11 +2416,9 @@ private:
 				objectsArray.push_back((float)lenses[i].materialID);
 			}
 
-			for (int i = 0; i < 1024; i++) {
+			for (int i = 0; i < MAX_OBJECTS_SIZE; i++) {
 				if (objectsArray.size() > i) {
-					ubo.objects[i] = objectsArray[i];
-				} else {
-					ubo.objects[i] = 0.0f;
+					ubo.packedObjects[i] = objectsArray[i];
 				}
 			}
 
@@ -2418,16 +2430,10 @@ private:
 				materialsArray.push_back(materials[i].emission[1]);
 			}
 
-			for (int i = 0; i < 128; i++) {
+			for (int i = 0; i < MAX_MATERIALS_SIZE; i++) {
 				if (materialsArray.size() > i) {
-					ubo.materials[i] = materialsArray[i];
-				} else {
-					ubo.materials[i] = 0.0f;
+					ubo.packedMaterials[i] = materialsArray[i];
 				}
-			}
-
-			for (int i = 0; i < 1323; i++) {
-				ubo.CIEXYZ2006[i] = CIEXYZ2006[i];
 			}
 
 			for (size_t k = 0; k < MAX_FRAMES_IN_FLIGHT; k++) {
