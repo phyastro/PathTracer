@@ -4,6 +4,8 @@
 
 #extension GL_EXT_scalar_block_layout : require
 
+precision highp float;
+
 layout(set = 0, binding = 0, std430) uniform ubo {
 	float numObjects[4];
 	float objects[1024];
@@ -91,13 +93,6 @@ struct material {
 };
 
 vec3 cameraPos = vec3(cameraPosX, cameraPosY, cameraPosZ);
-
-ivec2 ToMod4(int k) {
-	ivec2 ij = ivec2(0);
-	ij.y = int(k % 4);
-	ij.x = int(0.25 * (k - ij.y));
-	return ij;
-}
 
 vec3 WaveToXYZ(in float wave) {
 	// Conversion From Wavelength To XYZ Using CIE1964 XYZ Table
@@ -568,13 +563,13 @@ float RandomFloat(inout uint seed) {
 uint GenerateSeed(in uvec2 xy, in uint k) {
 	// Actually This Is Not The Correct Way To Generate Seed
 	// This Is The Correct Implementation Which Has No Overlapping:
-	/* uint seed = (resolution.x * resolution.y) * (frame - 1) + k;
+	/* uint seed = (resolution.x * resolution.y) * (frame - samplesPerFrame + k);
 	   seed += xy.x + resolution.x * xy.y;*/
 	// But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
 	// That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result
-	uint seed = (frame - 1) + k;
+	uint seed = frame - samplesPerFrame + k;
 	PCG32(seed);
-	seed = uint(mod(double(seed) + double(xy.x + resolution.x * xy.y), 0xFFFFFFFFu));
+	seed += xy.x + resolution.x * xy.y;
 	return seed;
 }
 
