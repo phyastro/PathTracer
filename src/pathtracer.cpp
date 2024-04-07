@@ -1351,6 +1351,18 @@ private:
 
 		VkSurfaceFormatKHR surfaceFormat;
 		for (const VkSurfaceFormatKHR& availableFormat : availableFormats) {
+			if (availableFormat.format == VK_FORMAT_R8G8B8A8_UNORM) {
+				surfaceFormat = availableFormat;
+				for (const colorSpaceName& colorSpace : colorSpaces) {
+					if (surfaceFormat.colorSpace == colorSpace.space) {
+						std::cout << "Using VK_FORMAT_R8G8B8A8_UNORM Format With " << colorSpace.name << " Color Space" << std::endl;
+						return surfaceFormat;
+					}
+				}
+			}
+		}
+
+		for (const VkSurfaceFormatKHR& availableFormat : availableFormats) {
 			if (availableFormat.format == VK_FORMAT_R16G16B16A16_SFLOAT) {
 				surfaceFormat = availableFormat;
 				for (const colorSpaceName& colorSpace : colorSpaces) {
