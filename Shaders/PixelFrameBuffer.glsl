@@ -3,7 +3,6 @@
 layout(location = 0) out vec4 FragColor;
 
 uniform ivec2 resolution;
-uniform int samples;
 uniform int tonemap;
 uniform sampler2D screenTexture;
 
@@ -44,7 +43,7 @@ vec3 DEUCESBioPhotometric(vec3 x) {
 
 void main() {
 	vec3 color = vec3(0.0);
-	color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz / ((samples > 0) ? samples : 1);
+	color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz;
 	color = max(XYZToRGB(color), 0.0);
 	if (tonemap == 1)
 		color = Reinhard(color);

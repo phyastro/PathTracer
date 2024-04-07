@@ -440,6 +440,9 @@ float SDF(in vec3 p) {
 
 float RayMarching(in Ray ray, inout float hitdist) {
 	float t = 0.0;
+	float omega = 1.2;
+	float previousRadius = 0.0;
+	float stepLength = 0.0;
 	vec3 p = vec3(0.0);
 	float heatmap = 0.0;
 	vec3 invdir = 1.0 / ray.dir;
@@ -449,13 +452,19 @@ float RayMarching(in Ray ray, inout float hitdist) {
 	for (int i = 0; i < 256; i++) {
 		heatmap += i;
 		p = fma(ray.dir, vec3(t), ray.origin);
-		float temp_t = abs(SDF(p));
-		t += temp_t;
+		float radius = abs(SDF(p));
+		if ((radius + previousRadius) < stepLength) {
+			stepLength = stepLength / omega;
+		} else {
+			previousRadius = radius;
+			stepLength = radius * omega;
+			t += stepLength;
+		}
+		if (radius < 1e-5) {
+			break;
+		}
 		if (!RayIntersectAABB(p, invdir, boundingBox)) {
 			return heatmap;
-		}
-		if (temp_t < 1e-5) {
-			break;
 		}
 	}
 	hitdist = t;
@@ -788,7 +797,7 @@ void Accumulate(inout vec3 color) {
 			float weight = pow(2.0, -8.0 / (FPS * persistance));
 			color = ((1.0 - weight) * color) + (weight * texture(screenTexture, gl_FragCoord.xy / resolution).xyz * samplesPerFrame / prevSamples);
 		} else {
-			color = texture(screenTexture, gl_FragCoord.xy / resolution).xyz + color;
+			color = ((samples - 1) * texture(screenTexture, gl_FragCoord.xy / resolution).xyz + color) / samples;
 		}
 	}
 }

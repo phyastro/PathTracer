@@ -736,7 +736,6 @@ int main(int argc, char* argv[])
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glUseProgram(frameBufferProgram);
-		glUniform1i(glGetUniformLocation(frameBufferProgram, "samples"), samples);
 		glUniform1i(glGetUniformLocation(frameBufferProgram, "tonemap"), tonemap);
 		if (isWinSizeChanged || isBeginning) {
 			glUniform2i(glGetUniformLocation(frameBufferProgram, "resolution"), width, height);
