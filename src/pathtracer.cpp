@@ -2784,13 +2784,15 @@ private:
 			submitInfo.commandBufferCount = 1;
 			submitInfo.pCommandBuffers = &graphicsCommandBuffers[currentFrame];
 
+			std::vector<VkSemaphore> waitSemaphores;
+			waitSemaphores.push_back(computeFinishedSemaphores[currentFrame]);
 			if (OFFSCREENRENDER) {
-				submitInfo.waitSemaphoreCount = 1;
-				submitInfo.pWaitSemaphores = &computeFinishedSemaphores[currentFrame];
+				submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
+				submitInfo.pWaitSemaphores = waitSemaphores.data();
 			} else {
-				VkSemaphore waitSemaphores[] = {computeFinishedSemaphores[currentFrame], imageAvailableSemaphores[currentFrame]};
-				submitInfo.waitSemaphoreCount = 2;
-				submitInfo.pWaitSemaphores = waitSemaphores;
+				waitSemaphores.push_back(imageAvailableSemaphores[currentFrame]);
+				submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
+				submitInfo.pWaitSemaphores = waitSemaphores.data();
 				submitInfo.signalSemaphoreCount = 1;
 				submitInfo.pSignalSemaphores = &renderFinishedSemaphores[currentFrame];
 			}
