@@ -564,7 +564,7 @@ float Intersection(in Ray ray, inout vec3 normal, inout int materialID) {
 		lens object;
 		UnpackLens(object, i, offset);
 		int isOutside = 1;
-		if (!BoundingSphere(ray, object.pos, object.radius * object.radius)) {
+		if (!BoundingSphere(ray, object.pos, (object.radius * object.radius) + (0.25 * object.thickness * object.thickness))) {
 			continue;
 		}
 		LensIntersection(ray, object, hitdist, normal, isOutside, materialID);

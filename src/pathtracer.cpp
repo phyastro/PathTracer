@@ -2854,7 +2854,7 @@ private:
 		sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
 		plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
 		box newbox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1 };
-		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, true, 1 };
+		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
 		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 
 		world1(camera, spheres, planes, boxes, lenses, materials);
