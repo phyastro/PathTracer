@@ -24,7 +24,6 @@
 
 const unsigned int WIDTH = 1280;
 const unsigned int HEIGHT = 720;
-const bool VSYNC = false;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 const bool OFFSCREENRENDER = false;
 const int NUMSAMPLES = 10000;
@@ -953,6 +952,7 @@ private:
     SDL_Window* window;
 	int W = WIDTH;
 	int H = HEIGHT;
+	bool VSync = false;
 
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
@@ -1028,6 +1028,7 @@ private:
 	ImGuiIO* io;
 
 	bool isViewPortResized = false;
+	bool isVSyncChanged = false;
 	bool isReset = false;
 	bool isUpdateUBO = true;
 
@@ -1281,9 +1282,6 @@ private:
 		vkGetPhysicalDeviceProperties(device, &deviceProperties);
 		VkPhysicalDeviceFeatures deviceFeatures;
 		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-		//VkImageFormatProperties formatProperties;
-		//vkGetPhysicalDeviceImageFormatProperties(device, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 0, &formatProperties);
-		//std::cout << formatProperties.sampleCounts << std::endl;
 
 		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
 			score = 100;
@@ -1413,7 +1411,7 @@ private:
 			}
 		}
 
-		if (VSYNC) {
+		if (VSync) {
 			for (const presentModeName& availablePresentModeName : availablePresentModesNames) {
 				if (availablePresentModeName.mode == VK_PRESENT_MODE_MAILBOX_KHR) {
 					std::cout << "Using Presentation Mode VK_PRESENT_MODE_MAILBOX_KHR" << std::endl;
@@ -2342,10 +2340,12 @@ private:
 
             if (event.type == SDL_QUIT) {
                 isRunning = false;
+				return;
             }
 
 			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isViewPortResized)) {
 				isViewPortResized = true;
+				break;
 			}
         }
 
@@ -2758,6 +2758,13 @@ private:
 		VkResult result;
 
 		if (!OFFSCREENRENDER) {
+			if (isVSyncChanged) {
+				RecreateImages();
+				frame = samplesPerFrame;
+				samples = samplesPerFrame;
+				isVSyncChanged = false;
+			}
+
 			result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, 
 			imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
@@ -2880,6 +2887,7 @@ private:
 					ImGui::Text("Samples: %i", samples);
 					ImGui::Text("Camera Angle: (%0.3f, %0.3f)", camera.angle.x, camera.angle.y);
 					ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", camera.pos.x, camera.pos.y, camera.pos.z);
+					isVSyncChanged = ImGui::Checkbox("VSync", &VSync);
 					isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
 					isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
 					ImGui::Separator();
