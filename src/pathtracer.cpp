@@ -1,9 +1,7 @@
 #include <vulkan/vulkan.h>
-#include <SDL.h>
-#include <SDL_vulkan.h>
-#include <SDL_image.h>
+#include <GLFW/glfw3.h>
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
+#include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -40,6 +38,10 @@ const bool isValidationLayersEnabled = true;
 #else
 const bool isValidationLayersEnabled = false;
 #endif
+
+struct GLFWEvents {
+	bool GLFW_WINDOW_RESIZED;
+};
 
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsComputeFamily;
@@ -169,6 +171,8 @@ struct PushConstantValues {
 	float lensDistance;
 	int tonemap;
 };
+
+GLFWEvents events{};
 
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -936,7 +940,6 @@ float tonemapping(float x, int tonemap) {
 	return x;
 }
 
-
 class App {
 public:
     void run() {
@@ -949,7 +952,7 @@ public:
         CleanUp();
     }
 private:
-    SDL_Window* window;
+    GLFWwindow* window;
 	int W = WIDTH;
 	int H = HEIGHT;
 	bool VSync = false;
@@ -1027,7 +1030,7 @@ private:
 	VkDescriptorPool imguiDescriptorPool;
 	ImGuiIO* io;
 
-	bool isViewPortResized = false;
+	bool isViewportResized = false;
 	bool isWindowMinimized = false;
 	bool isVSyncChanged = false;
 	bool isReset = false;
@@ -1037,7 +1040,7 @@ private:
 	int samplesPerFrame = 1;
 	int frame = samplesPerFrame;
 	int samples = samplesPerFrame;
-	float FPS = 60.0f;
+	float frameTime = 1.0f;
 
 	float persistence = 0.0625f;
 	int pathLength = 5;
@@ -1050,18 +1053,36 @@ private:
 	std::vector<material> materials;
 	Camera camera{};
 
-    void InitWindow() {
-        SDL_Init(SDL_INIT_VIDEO);
+	static void frameBufferSizeCallback(GLFWwindow* window, int width, int height) {
+		events.GLFW_WINDOW_RESIZED = true;
+	}
 
-        Uint32 WindowFlags = SDL_WINDOW_VULKAN;
+    void InitWindow() {
+		glfwInit();
+
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
 		if (OFFSCREENRENDER) {
-			WindowFlags |= SDL_WINDOW_HIDDEN;
+			glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 		} else {
-			WindowFlags |= SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+			glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+			glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 		}
 
-        window = SDL_CreateWindow("Path Tracer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, WindowFlags);
+		window = glfwCreateWindow(W, H, "Path Tracer", nullptr, nullptr);
+
+		glfwSetFramebufferSizeCallback(window, frameBufferSizeCallback);
+
+		GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+		int monitorX = 0;
+		int monitorY = 0;
+		int monitorWidth = 0;
+		int monitorHeight = 0;
+
+		glfwGetMonitorWorkarea(monitor, &monitorX, &monitorY, &monitorWidth, &monitorHeight);
+
+		glfwSetWindowPos(window, monitorX + (monitorWidth - W) / 2, monitorY + (monitorHeight - H) / 2);
+
     }
 
 	bool CheckValidationLayerSupport() {
@@ -1099,10 +1120,12 @@ private:
 	}
 
 	std::vector<const char*> GetRequiredInstanceExtensions() {
-		uint32_t SDLExtensionsCount = 0;
-		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, nullptr);
-		std::vector<const char*> extensions(SDLExtensionsCount);
-		SDL_Vulkan_GetInstanceExtensions(window, &SDLExtensionsCount, extensions.data());
+		uint32_t glfwExtensionsCount = 0;
+		glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
+		std::vector<const char*> extensions(glfwExtensionsCount);
+		for (uint32_t i = 0; i < glfwExtensionsCount; i++) {
+			extensions[i] = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount)[i];
+		}
 
 		if (isValidationLayersEnabled) {
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); // Require Extension VK_EXT_debug_utils
@@ -1184,7 +1207,7 @@ private:
 	}
 
 	void CreateSurface() {
-		if (SDL_Vulkan_CreateSurface(window, instance, &surface) != SDL_TRUE) {
+		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
 			throw std::runtime_error("Window Surface Creation Failed!");
 		}
 	}
@@ -1440,7 +1463,7 @@ private:
 			H = capabilities.currentExtent.height;
 			return capabilities.currentExtent;
 		} else {
-			SDL_GetWindowSizeInPixels(window, &W, &H);
+			glfwGetWindowSize(window, &W, &H);
 			VkExtent2D actualExtent = {
 				static_cast<uint32_t>(W), 
 				static_cast<uint32_t>(H)
@@ -2312,7 +2335,7 @@ private:
 		io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 		ImGui::StyleColorsDark();
 
-		ImGui_ImplSDL2_InitForVulkan(window);
+		ImGui_ImplGlfw_InitForVulkan(window, true);
 
 		ImGui_ImplVulkan_InitInfo initInfo{};
 		initInfo.Instance = instance;
@@ -2333,22 +2356,10 @@ private:
 		ImGui_ImplVulkan_CreateFontsTexture();
 	}
 
-	void SDLHandleEvents(bool& isRunning, glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isWindowFocused) {
-        SDL_Event event;
+	void handleEvents(glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isWindowFocused) {
+		glfwPollEvents();
 
-        while (SDL_PollEvent(&event)) {
-			ImGui_ImplSDL2_ProcessEvent(&event);
-
-            if (event.type == SDL_QUIT) {
-                isRunning = false;
-				return;
-            }
-
-			if ((event.window.event == SDL_WINDOWEVENT_RESIZED) && (!isViewPortResized)) {
-				isViewPortResized = true;
-				break;
-			}
-        }
+		isViewportResized = events.GLFW_WINDOW_RESIZED;
 
 		glm::vec2 cursorPos1 = glm::vec2((float)(ImGui::GetMousePos().x) / (float)W, (float)(H - ImGui::GetMousePos().y) / (float)H);
 
@@ -2381,6 +2392,8 @@ private:
 		if ((deltaCamPos.x != 0.0f) || (deltaCamPos.y != 0.0f) || (deltaCamPos.z != 0.0f)) {
 			isReset = true;
 		}
+
+		events.GLFW_WINDOW_RESIZED = false;
     }
 
 	void UpdateCameraPos(glm::vec3& cameraPos, glm::vec2 cameraAngle, glm::vec3 deltaCamPos) {
@@ -2611,12 +2624,10 @@ private:
 	}
 
 	void RecreateImages() {
-		SDL_Event event;
-
-		while ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0) {
-			SDL_WaitEvent(&event);
-
-			isWindowMinimized = true;
+		isWindowMinimized = (bool)glfwGetWindowAttrib(window, GLFW_ICONIFIED);
+		
+		while (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
+			glfwWaitEvents();
 		}
 
 		if (isWindowMinimized) {
@@ -2723,7 +2734,7 @@ private:
 		pushConstant.frame = frame;
 		pushConstant.samples = samples;
 		pushConstant.samplesPerFrame = samplesPerFrame;
-		pushConstant.FPS = FPS;
+		pushConstant.FPS = 1.0f / frameTime;
 		pushConstant.persistence = persistence;
 		pushConstant.pathLength = pathLength;
 		pushConstant.cameraAngle = glm::vec2(-camera.angle.y, camera.angle.x);
@@ -2845,7 +2856,7 @@ private:
 
 			result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-			if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR) || isViewPortResized) {
+			if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR) || isViewportResized) {
 				RecreateImages();
 
 				if (!isWindowMinimized) {
@@ -2855,7 +2866,7 @@ private:
 					isWindowMinimized = false;
 				}
 
-				isViewPortResized = false;
+				isViewportResized = false;
 			} else if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed To Present Swap Chain Image!");
 			}
@@ -2865,19 +2876,18 @@ private:
 	}
     
     void MainLoop() {
-        bool isRunning = true;
 		bool isWindowFocused = false;
 
-		uint64_t start = 0;
-		uint64_t end = 0;
-		uint64_t prevEnd = 0;
+		double start = 0;
+		double end = 0;
+		double prevEnd = 0;
 
 		if (OFFSCREENRENDER) {
 			samplesPerFrame = NUMSAMPLESPERFRAME;
 			pathLength = PATHLENGTH;
 			frame = samplesPerFrame;
 			samples = samplesPerFrame;
-			start = SDL_GetPerformanceCounter();
+			start = glfwGetTime();
 		}
 
 		glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
@@ -2895,14 +2905,14 @@ private:
 
 		world1(camera, spheres, planes, boxes, lenses, materials);
 
-        while (isRunning) {
+        while (!glfwWindowShouldClose(window)) {
 			if (!OFFSCREENRENDER) {
-				SDLHandleEvents(isRunning, cursorPos, camera.angle, deltaCamPos, isWindowFocused);
-				deltaCamPos *= 3.0f / FPS;
+				handleEvents(cursorPos, camera.angle, deltaCamPos, isWindowFocused);
+				deltaCamPos *= 3.0f * frameTime;
 				UpdateCameraPos(camera.pos, glm::radians(camera.angle), deltaCamPos);
 
 				ImGui_ImplVulkan_NewFrame();
-				ImGui_ImplSDL2_NewFrame();
+				ImGui_ImplGlfw_NewFrame();
 				ImGui::NewFrame();
 
 				ImGuiWindowFlags WinFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize;
@@ -2910,7 +2920,7 @@ private:
 				{
 					ImGui::Begin("Scene", NULL, WinFlags);
 					ImGui::SetWindowPos(ImVec2(W - ImGui::GetWindowWidth(), 0));
-					ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f / FPS, FPS);
+					ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f * frameTime, 1.0f / frameTime);
 					ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
 					ImGui::Text("Resolution: (%i, %i) px", W, H);
 					ImGui::Text("Samples: %i", samples);
@@ -3088,11 +3098,10 @@ private:
 
 			if (OFFSCREENRENDER) {
 				prevEnd = end;
-				end = SDL_GetPerformanceCounter();
-				double frequency = (double)SDL_GetPerformanceFrequency();
-				double dtime = (double)(end - prevEnd) / frequency;
+				end = glfwGetTime();
+				double dtime = end - prevEnd;
 				double speed = (double)samplesPerFrame / dtime;
-				double timeElapsed = (double)(end - start) / frequency;
+				double timeElapsed = end - start;
 				double progress = (double)samples / (double)NUMSAMPLES;
 				int percentage = (int)(100.0 * progress);
 				double timeRemaining = timeElapsed * ((1.0 / progress) - 1.0);
@@ -3109,7 +3118,7 @@ private:
 				if (samples >= NUMSAMPLES) {
 					std::cout << std::endl;
 					printf("Rendering Completed In %0.3fs. \n", timeElapsed);
-					isRunning = false;
+					break;
 				}
 			}
 
@@ -3122,15 +3131,15 @@ private:
 			}
 
 			if (!OFFSCREENRENDER) {
-				FPS = 1.0f / io->DeltaTime;
+				frameTime = io->DeltaTime;
 				if (frames.size() > 100) {
 					for (size_t i = 1; i < frames.size(); i++) {
 						frames[i - 1] = frames[i];
 					}
-					frames[frames.size() - 1] = 1000.0f / FPS;
+					frames[frames.size() - 1] = 1000.0f * frameTime;
 				}
 				else {
-					frames.push_back(1000.0f / FPS);
+					frames.push_back(1000.0f * frameTime);
 				}
 			}
         }
@@ -3146,10 +3155,10 @@ private:
 			unsigned char* pixels = new unsigned char[W * H * 4];
 			vkMapMemory(device, saveImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&pixels);
 
-			SDL_Surface* frameSurface = SDL_CreateRGBSurfaceFrom(pixels, W, H, 8 * 4, subresourceLayout.rowPitch, 0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
-			IMG_SavePNG(frameSurface, "render.png");
-			std::cout << "Rendered Image Has Been Successfully Saved." << std::endl;
-			SDL_FreeSurface(frameSurface);
+			//SDL_Surface* frameSurface = SDL_CreateRGBSurfaceFrom(pixels, W, H, 8 * 4, subresourceLayout.rowPitch, 0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
+			//IMG_SavePNG(frameSurface, "render.png");
+			//std::cout << "Rendered Image Has Been Successfully Saved." << std::endl;
+			//SDL_FreeSurface(frameSurface);
 
 			vkUnmapMemory(device, saveImageMemory);
 			delete[] pixels;
@@ -3162,7 +3171,7 @@ private:
 
 		if (!OFFSCREENRENDER) {
 			ImGui_ImplVulkan_Shutdown();
-			ImGui_ImplSDL2_Shutdown();
+			ImGui_ImplGlfw_Shutdown();
 			ImGui::DestroyContext();
 		}
 
@@ -3216,8 +3225,8 @@ private:
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyInstance(instance, nullptr);
 
-        SDL_DestroyWindow(window);
-        SDL_Quit();
+        glfwDestroyWindow(window);
+		glfwTerminate();
     }
 };
 
