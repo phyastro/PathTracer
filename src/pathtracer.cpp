@@ -1028,6 +1028,7 @@ private:
 	ImGuiIO* io;
 
 	bool isViewPortResized = false;
+	bool isWindowMinimized = false;
 	bool isVSyncChanged = false;
 	bool isReset = false;
 	bool isUpdateUBO = true;
@@ -2587,18 +2588,15 @@ private:
 
 			vkDestroySwapchainKHR(device, swapChain, nullptr);
 		}
+	}
 
+	void CleanUpTexelBuffer() {
 		vkDestroyBufferView(device, texelBufferView, nullptr);
 		vkDestroyBuffer(device, texelBuffer, nullptr);
 		vkFreeMemory(device, texelBufferMemory, nullptr);
 	}
 
-	void RecreateImages() {
-		SDL_Event event;
-		while ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0) {
-			SDL_WaitEvent(&event);
-		}
-
+	void RecreateSwapChain() {
 		vkDeviceWaitIdle(device);
 
 		CleanUpImages();
@@ -2606,12 +2604,32 @@ private:
 		CreateSwapChain();
 		CreateSwapChainImageViews();
 
+		CreateImages();
+		CreateImageViews();
+
+		CreateFramebuffers();
+	}
+
+	void RecreateImages() {
+		SDL_Event event;
+
+		while ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0) {
+			SDL_WaitEvent(&event);
+
+			isWindowMinimized = true;
+		}
+
+		if (isWindowMinimized) {
+			return;
+		}
+
+		RecreateSwapChain();
+
+		CleanUpTexelBuffer();
+
 		CreateTexelBuffer();
 		CreateTexelBufferView();
 
-		CreateImages();
-		CreateImageViews();
-		CreateFramebuffers();
 		UpdateDescriptorSet();
 	}
 
@@ -2759,9 +2777,8 @@ private:
 
 		if (!OFFSCREENRENDER) {
 			if (isVSyncChanged) {
-				RecreateImages();
-				frame = samplesPerFrame;
-				samples = samplesPerFrame;
+				RecreateSwapChain();
+
 				isVSyncChanged = false;
 			}
 
@@ -2770,8 +2787,14 @@ private:
 
 			if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 				RecreateImages();
-				frame = samplesPerFrame;
-				samples = samplesPerFrame;
+
+				if (!isWindowMinimized) {
+					frame = samplesPerFrame;
+					samples = samplesPerFrame;
+				} else {
+					isWindowMinimized = false;
+				}
+
 				return;
 			} else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)) {
 				throw std::runtime_error("Failed To Acquire Swap Chain Image!");
@@ -2823,10 +2846,16 @@ private:
 			result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
 			if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR) || isViewPortResized) {
-				isViewPortResized = false;
 				RecreateImages();
-				frame = 0;
-				samples = 0;
+
+				if (!isWindowMinimized) {
+					frame = 0;
+					samples = 0;
+				} else {
+					isWindowMinimized = false;
+				}
+
+				isViewPortResized = false;
 			} else if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed To Present Swap Chain Image!");
 			}
@@ -3129,6 +3158,7 @@ private:
 
     void CleanUp() {
 		CleanUpImages();
+		CleanUpTexelBuffer();
 
 		if (!OFFSCREENRENDER) {
 			ImGui_ImplVulkan_Shutdown();
