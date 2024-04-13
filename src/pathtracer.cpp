@@ -1434,6 +1434,9 @@ private:
 		}
 
 		if (VSync) {
+			std::cout << "Using Presentation Mode VK_PRESENT_MODE_FIFO_KHR" << std::endl;
+			return VK_PRESENT_MODE_FIFO_KHR;
+		} else {
 			for (const presentModeName& availablePresentModeName : availablePresentModesNames) {
 				if (availablePresentModeName.mode == VK_PRESENT_MODE_MAILBOX_KHR) {
 					std::cout << "Using Presentation Mode VK_PRESENT_MODE_MAILBOX_KHR" << std::endl;
@@ -1441,9 +1444,6 @@ private:
 				}
 			}
 
-			std::cout << "Using Presentation Mode VK_PRESENT_MODE_FIFO_KHR" << std::endl;
-			return VK_PRESENT_MODE_FIFO_KHR;
-		} else {
 			for (const presentModeName& availablePresentModeName : availablePresentModesNames) {
 				if (availablePresentModeName.mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
 					std::cout << "Using Presentation Mode VK_PRESENT_MODE_IMMEDIATE_KHR" << std::endl;
