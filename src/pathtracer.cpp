@@ -39,10 +39,6 @@ const bool isValidationLayersEnabled = true;
 const bool isValidationLayersEnabled = false;
 #endif
 
-struct GLFWEvents {
-	bool GLFW_WINDOW_RESIZED;
-};
-
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsComputeFamily;
 	std::optional<uint32_t> presentFamily;
@@ -171,8 +167,6 @@ struct PushConstantValues {
 	float lensDistance;
 	int tonemap;
 };
-
-GLFWEvents events{};
 
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -1028,7 +1022,6 @@ private:
 	VkDescriptorPool imguiDescriptorPool;
 	ImGuiIO* io;
 
-	bool isViewportResized = false;
 	bool isWindowMinimized = false;
 	bool isVSyncChanged = false;
 	bool isReset = false;
@@ -1051,10 +1044,6 @@ private:
 	std::vector<material> materials;
 	Camera camera{};
 
-	static void frameBufferSizeCallback(GLFWwindow* window, int width, int height) {
-		events.GLFW_WINDOW_RESIZED = true;
-	}
-
     void InitWindow() {
 		glfwInit();
 
@@ -1068,8 +1057,6 @@ private:
 		}
 
 		window = glfwCreateWindow(W, H, "Path Tracer", nullptr, nullptr);
-
-		glfwSetFramebufferSizeCallback(window, frameBufferSizeCallback);
 
 		GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 		int monitorX = 0;
@@ -2354,10 +2341,8 @@ private:
 		ImGui_ImplVulkan_CreateFontsTexture();
 	}
 
-	void handleEvents(glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isWindowFocused) {
+	void HandleEvents(glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isWindowFocused) {
 		glfwPollEvents();
-
-		isViewportResized = events.GLFW_WINDOW_RESIZED;
 
 		glm::vec2 cursorPos1 = glm::vec2((float)(ImGui::GetMousePos().x) / (float)W, (float)(H - ImGui::GetMousePos().y) / (float)H);
 
@@ -2390,8 +2375,6 @@ private:
 		if ((deltaCamPos.x != 0.0f) || (deltaCamPos.y != 0.0f) || (deltaCamPos.z != 0.0f)) {
 			isReset = true;
 		}
-
-		events.GLFW_WINDOW_RESIZED = false;
     }
 
 	void UpdateCameraPos(glm::vec3& cameraPos, glm::vec2 cameraAngle, glm::vec3 deltaCamPos) {
@@ -2404,16 +2387,21 @@ private:
 		cameraPos = cameraPos + deltaCamPos * m;
 	}
 
-	void ItemsTable(const char* name, int& selection, int id, int size) {
+	void ItemsTable(const char* name, int& selection, int id, int size, bool isPrintID) {
 		for (int i = id; i < (size + id); i++) {
 			ImGui::PushID(i);
 			ImGui::TableNextRow();
-			char label[32];
-			sprintf_s(label, name, i - id + 1);
 			ImGui::TableSetColumnIndex(0);
+
+			std::string label;
+			label.append(name);
+			if (isPrintID) {
+				label.append(std::to_string(i - id + 1));
+			}
+
 			bool isSelected = selection == i;
 
-			if (ImGui::Selectable(label, &isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+			if (ImGui::Selectable(label.data(), &isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
 				if (isSelected) {
 					selection = i;
 				}
@@ -2854,7 +2842,7 @@ private:
 
 			result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-			if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR) || isViewportResized) {
+			if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR)) {
 				RecreateImages();
 
 				if (!isWindowMinimized) {
@@ -2863,8 +2851,6 @@ private:
 				} else {
 					isWindowMinimized = false;
 				}
-
-				isViewportResized = false;
 			} else if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed To Present Swap Chain Image!");
 			}
@@ -2905,7 +2891,7 @@ private:
 
         while (!glfwWindowShouldClose(window)) {
 			if (!OFFSCREENRENDER) {
-				handleEvents(cursorPos, camera.angle, deltaCamPos, isWindowFocused);
+				HandleEvents(cursorPos, camera.angle, deltaCamPos, isWindowFocused);
 				deltaCamPos *= 3.0f * frameTime;
 				UpdateCameraPos(camera.pos, glm::radians(camera.angle), deltaCamPos);
 
@@ -2933,12 +2919,13 @@ private:
 						if (ImGui::BeginTable("Tonemap Table", 1)) {
 							ImGui::TableSetupColumn("Tonemap");
 							ImGui::TableHeadersRow();
-							ItemsTable("None", tonemap, 0, 1);
-							ItemsTable("Reinhard", tonemap, 1, 1);
-							ItemsTable("ACES Film", tonemap, 2, 1);
-							ItemsTable("DEUCES", tonemap, 3, 1);
+							ItemsTable("None", tonemap, 0, 1, false);
+							ItemsTable("Reinhard", tonemap, 1, 1, false);
+							ItemsTable("ACES Film", tonemap, 2, 1, false);
+							ItemsTable("DEUCES", tonemap, 3, 1, false);
 							ImGui::EndTable();
 						}
+
 						tonemapGraph.clear();
 						for (int i = 1; i < 101; i++) {
 							float x = 0.01f * (float)i;
@@ -2967,56 +2954,42 @@ private:
 					ImGui::Separator();
 
 					if (ImGui::CollapsingHeader("Objects")) {
-						static int objectsSelection = 0;
-
-						if (ImGui::Button("Add New Sphere")) {
-							spheres.push_back(newsphere);
-						}
-						if (ImGui::Button("Add New Plane")) {
-							planes.push_back(newplane);
-						}
-						if (ImGui::Button("Add New Box")) {
-							boxes.push_back(newbox);
-						}
-						if (ImGui::Button("Add New Lens")) {
-							lenses.push_back(newlens);
-						}
-						ImGui::Separator();
+						static int objectSelection = 0;
 
 						int numObjs = 0;
-						if ((objectsSelection < (numObjs + spheres.size())) && (objectsSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectsSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", spheres[objectsSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[objectsSelection - numObjs].radius, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[objectsSelection - numObjs].materialID, 0.02f);
+						if ((objectSelection < (numObjs + spheres.size())) && (objectSelection > (numObjs - 1))) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectSelection - numObjs + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", spheres[objectSelection - numObjs].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[objectSelection - numObjs].radius, 0.01f);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[objectSelection - numObjs].materialID, 0.02f);
 						}
 						numObjs += (int)spheres.size();
 
-						if ((objectsSelection < (numObjs + planes.size())) && (objectsSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectsSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", planes[objectsSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &planes[objectsSelection - numObjs].materialID, 0.02f);
+						if ((objectSelection < (numObjs + planes.size())) && (objectSelection > (numObjs - 1))) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectSelection - numObjs + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", planes[objectSelection - numObjs].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &planes[objectSelection - numObjs].materialID, 0.02f);
 						}
 						numObjs += (int)planes.size();
 
-						if ((objectsSelection < (numObjs + boxes.size())) && (objectsSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", objectsSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", boxes[objectsSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[objectsSelection - numObjs].rotation, 0.1f);
-							isUpdateUBO |= ImGui::DragFloat3("Size", boxes[objectsSelection - numObjs].size, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[objectsSelection - numObjs].materialID, 0.02f);
+						if ((objectSelection < (numObjs + boxes.size())) && (objectSelection > (numObjs - 1))) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", objectSelection - numObjs + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", boxes[objectSelection - numObjs].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[objectSelection - numObjs].rotation, 0.1f);
+							isUpdateUBO |= ImGui::DragFloat3("Size", boxes[objectSelection - numObjs].size, 0.01f);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[objectSelection - numObjs].materialID, 0.02f);
 						}
 						numObjs += (int)boxes.size();
 
-						if ((objectsSelection < (numObjs + lenses.size())) && (objectsSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", objectsSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", lenses[objectsSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[objectsSelection - numObjs].rotation, 0.1f);
-							isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[objectsSelection - numObjs].radius, 0.001f);
-							isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[objectsSelection - numObjs].focalLength, 0.001f);
-							isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[objectsSelection - numObjs].thickness, 0.001f);
-							isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[objectsSelection - numObjs].isConverging);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[objectsSelection - numObjs].materialID, 0.02f);
+						if ((objectSelection < (numObjs + lenses.size())) && (objectSelection > (numObjs - 1))) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", objectSelection - numObjs + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", lenses[objectSelection - numObjs].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[objectSelection - numObjs].rotation, 0.1f);
+							isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[objectSelection - numObjs].radius, 0.001f);
+							isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[objectSelection - numObjs].focalLength, 0.001f);
+							isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[objectSelection - numObjs].thickness, 0.001f);
+							isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[objectSelection - numObjs].isConverging);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[objectSelection - numObjs].materialID, 0.02f);
 						}
 						numObjs += (int)lenses.size();
 						ImGui::Separator();
@@ -3024,41 +2997,53 @@ private:
 						if (ImGui::BeginTable("Objects Table", 1)) {
 							ImGui::TableSetupColumn("Object");
 							ImGui::TableHeadersRow();
-							ItemsTable("Sphere %i", objectsSelection, 0, (int)spheres.size());
-							ItemsTable("Plane %i", objectsSelection, (int)(spheres.size()), (int)planes.size());
-							ItemsTable("Box %i", objectsSelection, (int)(spheres.size() + planes.size()), (int)boxes.size());
-							ItemsTable("Lens %i", objectsSelection, (int)(spheres.size() + planes.size() + boxes.size()), (int)lenses.size());
+							ItemsTable("Sphere ", objectSelection, 0, (int)spheres.size(), true);
+							ItemsTable("Plane ", objectSelection, (int)(spheres.size()), (int)planes.size(), true);
+							ItemsTable("Box ", objectSelection, (int)(spheres.size() + planes.size()), (int)boxes.size(), true);
+							ItemsTable("Lens ", objectSelection, (int)(spheres.size() + planes.size() + boxes.size()), (int)lenses.size(), true);
 							ImGui::EndTable();
+						}
+						ImGui::Separator();
+
+						if (ImGui::Button("Add New Sphere")) {
+							spheres.push_back(newsphere);
+							isUpdateUBO = true;
+						}
+						if (ImGui::Button("Add New Plane")) {
+							planes.push_back(newplane);
+							isUpdateUBO = true;
+						}
+						if (ImGui::Button("Add New Box")) {
+							boxes.push_back(newbox);
+							isUpdateUBO = true;
+						}
+						if (ImGui::Button("Add New Lens")) {
+							lenses.push_back(newlens);
+							isUpdateUBO = true;
 						}
 					}
 					ImGui::Separator();
 
 					if (ImGui::CollapsingHeader("Materials")) {
-						static int materialsSelection = 0;
+						static int materialSelection = 0;
 
-						if (ImGui::Button("Add New Material")) {
-							materials.push_back(newmaterial);
-							isUpdateUBO = true;
-						}
-						ImGui::Separator();
-
-						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialsSelection + 1);
+						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialSelection + 1);
 						ImGui::Text("Reflection");
 						ImGui::PushID("Reflection");
 						spectra.clear();
 						for (int i = 1; i < 101; i++) {
 							float x = 0.01f * float(i) * 330.0f + 390.0f;
-							spectra.push_back(SpectralPowerDistribution(x, materials[materialsSelection].reflection[0], 
-							materials[materialsSelection].reflection[1], materials[materialsSelection].reflection[2]));
+							spectra.push_back(SpectralPowerDistribution(x, materials[materialSelection].reflection[0], 
+							materials[materialSelection].reflection[1], materials[materialSelection].reflection[2]));
 						}
 
 						ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-						isUpdateUBO |= ImGui::DragFloat("Peak Lambda", &materials[materialsSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
-						isUpdateUBO |= ImGui::DragFloat("Sigma", &materials[materialsSelection].reflection[1], 0.5f, 0.0f, 100.0f);
+						isUpdateUBO |= ImGui::DragFloat("Peak Lambda", &materials[materialSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
+						isUpdateUBO |= ImGui::DragFloat("Sigma", &materials[materialSelection].reflection[1], 0.5f, 0.0f, 100.0f);
 						bool isInvertBool;
-						isInvertBool = (bool)materials[materialsSelection].reflection[2];
+						isInvertBool = (bool)materials[materialSelection].reflection[2];
 						isUpdateUBO |= ImGui::Checkbox("Invert", &isInvertBool);
-						materials[materialsSelection].reflection[2] = (float)isInvertBool;
+						materials[materialSelection].reflection[2] = (float)isInvertBool;
 						ImGui::PopID();
 
 						ImGui::Text("Emission");
@@ -3066,20 +3051,26 @@ private:
 						spectra.clear();
 						for (int i = 1; i < 101; i++) {
 							float x = float(i) * 12e-9f;
-							spectra.push_back(BlackBodyRadiation(x, materials[materialsSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialsSelection].emission[0]));
+							spectra.push_back(BlackBodyRadiation(x, materials[materialSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialSelection].emission[0]));
 						}
 
 						ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-						isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialsSelection].emission[0], 5.0f);
-						isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialsSelection].emission[1], 0.1f);
+						isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialSelection].emission[0], 5.0f);
+						isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialSelection].emission[1], 0.1f);
 						ImGui::PopID();
 						ImGui::Separator();
 
 						if (ImGui::BeginTable("Materials Table", 1)) {
 							ImGui::TableSetupColumn("Materials");
 							ImGui::TableHeadersRow();
-							ItemsTable("Material %i", materialsSelection, 0, (int)materials.size());
+							ItemsTable("Material ", materialSelection, 0, (int)materials.size(), true);
 							ImGui::EndTable();
+						}
+						ImGui::Separator();
+
+						if (ImGui::Button("Add New Material")) {
+							materials.push_back(newmaterial);
+							isUpdateUBO = true;
 						}
 					}
 
