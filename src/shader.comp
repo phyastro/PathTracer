@@ -6,6 +6,7 @@
 
 precision highp float;
 
+#define MINDIST 1e-5
 #define MAXDIST 1e5
 #define PI 3.141592653589792623810034526344
 #define ONEBYTHREE 0.3333333
@@ -494,37 +495,56 @@ float SDF(in vec3 p) {
 	return min(min(min(s1, s2), s3), s4);
 }
 
-float RayMarching(in Ray ray, inout float hitdist) {
+void SphereTracing(in Ray ray, inout float hitdist) {
 	float t = 0.0;
-	float omega = 1.2;
+	float omega = 1.25;
+	float dynamicOmega = omega;
+	float omegaMix = 1.0;
 	float previousRadius = 0.0;
 	float stepLength = 0.0;
-	vec3 p = vec3(0.0);
-	float heatmap = 0.0;
+	vec3 p = ray.origin;
 	vec3 invdir = 1.0 / ray.dir;
 	box boundingBox;
 	boundingBox.pos = vec3(0.0, 0.7, 0.0);
 	boundingBox.size = vec3(4.0, 5.4, 4.0);
+
 	for (int i = 0; i < 256; i++) {
-		heatmap += i;
-		p = fma(ray.dir, vec3(t), ray.origin);
 		float radius = abs(SDF(p));
-		if ((radius + previousRadius) < stepLength) {
-			stepLength = stepLength / omega;
+
+		// Over-Relaxation Sphere Tracing: https://erleuchtet.org/~cupe/permanent/enhanced_sphere_tracing.pdf
+		bool isStepLengthExceeded = stepLength > (radius + previousRadius);
+		if (isStepLengthExceeded) {
+			t -= stepLength;
+			stepLength = previousRadius;
+			dynamicOmega = 1.0;
+			omegaMix = 0.0;
 		} else {
-			previousRadius = radius;
-			stepLength = radius * omega;
+			stepLength = radius * dynamicOmega;
 			t += stepLength;
+			previousRadius = radius;
 		}
-		if (radius < 1e-5) {
+
+		// Minimum Distance
+		if (stepLength < MINDIST) {
 			break;
 		}
-		if (!RayIntersectAABB(p, invdir, boundingBox)) {
-			return heatmap;
+
+		// Bounding Box On The SDF
+		if (!RayIntersectAABB(p, invdir, boundingBox) && !isStepLengthExceeded) {
+			return;
 		}
+
+		// Progress Towards Original Value Of Omega
+		dynamicOmega = mix(dynamicOmega, omega, omegaMix);
+		if (omegaMix < 1.0) {
+			omegaMix = clamp(omegaMix + 0.2, 0.0, 1.0);
+		}
+
+		// Update Ray Origin
+		p = fma(ray.dir, vec3(t), ray.origin);
 	}
+
 	hitdist = t;
-	return heatmap;
 }
 
 float Intersection(in Ray ray, inout vec3 normal, inout int materialID) {
@@ -829,8 +849,8 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
 	TracePathLens(l, ray, forwardDir);
 	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InverseSpectraPDF(390.0, 720.0);
 	//float hitdist = MAXDIST;
-	//float heatmap = RayMarching(ray, hitdist);
-	//color += heatmap;
+	//SphereTracing(ray, hitdist);
+	//color += hitdist;
 
 	return color;
 }
