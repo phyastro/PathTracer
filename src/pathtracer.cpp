@@ -791,22 +791,6 @@ const float CIEXYZ2006[1323] = {
     0.000001579199f, 	0.000000634538f, 	0.0f
 };
 
-std::vector<char> ReadFile(const std::string& filename) {
-	std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-	if (!file.is_open()) {
-		throw std::runtime_error("Failed To Open The File!");
-	}
-
-	size_t fileSize = (size_t)file.tellg();
-	std::vector<char> buffer(fileSize);
-	file.seekg(0);
-	file.read(buffer.data(), fileSize);
-	file.close();
-
-	return buffer;
-}
-
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, 
 const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, 
 const VkAllocationCallbacks *pAllocator, 
@@ -830,7 +814,40 @@ const VkAllocationCallbacks* pAllocator) {
 	}
 }
 
-void world1(Camera& camera, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<lens>& lenses, std::vector<material>& materials) {
+std::vector<char> ReadFile(const std::string& filename) {
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open()) {
+		throw std::runtime_error("Failed To Open The File!");
+	}
+
+	size_t fileSize = (size_t)file.tellg();
+	std::vector<char> buffer(fileSize);
+	file.seekg(0);
+	file.read(buffer.data(), fileSize);
+	file.close();
+
+	return buffer;
+}
+
+void SavePPM(std::string filename, int width, int height, char* data) {
+	std::ofstream file;
+	file.open(filename, std::ios::out | std::ios::binary);
+
+	file << "P6" << "\n" << width << "\n" << height << "\n" << "255" << "\n";
+
+	file.write(data, static_cast<size_t>(width * height * 3));
+
+	if (file.fail()) {
+		throw std::runtime_error("Couldn't Save The Image File!");
+	} else {
+		std::cout << "Successfully Saved The Image File." << std::endl;
+	}
+	
+	file.close();
+}
+
+void World1(Camera& camera, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<lens>& lenses, std::vector<material>& materials) {
 	// Camera
 	camera.pos = glm::vec3(6.332f, 3.855f, 3.140f);
 	camera.angle = glm::vec2(225.093f, -31.512f);
@@ -1031,7 +1048,7 @@ private:
 	int samplesPerFrame = 1;
 	int frame = samplesPerFrame;
 	int samples = samplesPerFrame;
-	float frameTime = 1.0f;
+	float frameTime = 0.0166f;
 
 	float persistence = 0.0625f;
 	int pathLength = 5;
@@ -1067,7 +1084,6 @@ private:
 		glfwGetMonitorWorkarea(monitor, &monitorX, &monitorY, &monitorWidth, &monitorHeight);
 
 		glfwSetWindowPos(window, monitorX + (monitorWidth - W) / 2, monitorY + (monitorHeight - H) / 2);
-
     }
 
 	bool CheckValidationLayerSupport() {
@@ -1106,15 +1122,18 @@ private:
 
 	std::vector<const char*> GetRequiredInstanceExtensions() {
 		uint32_t glfwExtensionsCount = 0;
-		glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
+		const char** glfwExtensions;
+		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
+
 		std::vector<const char*> extensions(glfwExtensionsCount);
 		for (uint32_t i = 0; i < glfwExtensionsCount; i++) {
-			extensions[i] = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount)[i];
+			extensions[i] = glfwExtensions[i];
 		}
 
 		if (isValidationLayersEnabled) {
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); // Require Extension VK_EXT_debug_utils
 		}
+
 		for (const char* instanceExtension : instanceExtensions) {
 			extensions.push_back(instanceExtension);
 		}
@@ -1315,8 +1334,10 @@ private:
 		if (devicesCount == 0) {
 			throw std::runtime_error("Failed To Find GPUs With Vulkan Support!");
 		}
+
 		std::vector<VkPhysicalDevice> devices(devicesCount);
 		vkEnumeratePhysicalDevices(instance, &devicesCount, devices.data());
+
 		std::multimap<int, VkPhysicalDevice> deviceScores;
 		for (const VkPhysicalDevice &device : devices) {
 			int score = RateDeviceSuitability(device);
@@ -2887,7 +2908,7 @@ private:
 		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
 		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 
-		world1(camera, spheres, planes, boxes, lenses, materials);
+		World1(camera, spheres, planes, boxes, lenses, materials);
 
         while (!glfwWindowShouldClose(window)) {
 			if (!OFFSCREENRENDER) {
@@ -3141,15 +3162,20 @@ private:
 			VkSubresourceLayout subresourceLayout{};
 			vkGetImageSubresourceLayout(device, saveImage, &subresource, &subresourceLayout);
 
-			unsigned char* pixels = new unsigned char[W * H * 4];
+			char* pixels = new char[W * H * 4];
+			char* pixelsRGB = new char[W * H * 3];
 			vkMapMemory(device, saveImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&pixels);
 
-			//SDL_Surface* frameSurface = SDL_CreateRGBSurfaceFrom(pixels, W, H, 8 * 4, subresourceLayout.rowPitch, 0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
-			//IMG_SavePNG(frameSurface, "render.png");
-			//std::cout << "Rendered Image Has Been Successfully Saved." << std::endl;
-			//SDL_FreeSurface(frameSurface);
+			for (int i = 0; i < (W * H); i++) {
+				pixelsRGB[3*i] = pixels[4*i+2];
+				pixelsRGB[3*i+1] = pixels[4*i+1];
+				pixelsRGB[3*i+2] = pixels[4*i];
+			}
+
+			SavePPM("render.ppm", W, H, pixelsRGB);
 
 			vkUnmapMemory(device, saveImageMemory);
+			delete[] pixelsRGB;
 			delete[] pixels;
 		}
     }
