@@ -1,7 +1,5 @@
 #version 450
 
-#pragma shader_stage(vertex)
-
 layout(location = 0) in vec2 inPosition;
 
 void main() {

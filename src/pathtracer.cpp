@@ -1,4 +1,7 @@
 #include <vulkan/vulkan.h>
+#include <glslang/Public/ShaderLang.h>
+#include <glslang/Public/ResourceLimits.h>
+#include <glslang/SPIRV/GlslangToSpv.h>
 #include <GLFW/glfw3.h>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -10,6 +13,7 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <vector>
+#include <string>
 #include <map>
 #include <optional>
 #include <set>
@@ -814,21 +818,31 @@ const VkAllocationCallbacks* pAllocator) {
 	}
 }
 
-std::vector<char> ReadFile(const std::string& filename) {
-	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+std::string ReadFile(const std::string& fileDir) {
+	std::ifstream file(fileDir, std::ios::ate | std::ios::binary);
 
 	if (!file.is_open()) {
-		throw std::runtime_error("Failed To Open The File!");
+		std::string error;
+		error.append("Failed To Open The File With Directory ");
+		error.append(fileDir.c_str());
+
+		throw std::runtime_error(error);
 	}
 
 	size_t fileSize = (size_t)file.tellg();
-	std::vector<char> buffer(fileSize);
+	std::string buffer;
+	buffer.resize(fileSize);
+
 	file.seekg(0);
 	file.read(buffer.data(), fileSize);
 	file.close();
 
 	return buffer;
 }
+
+const std::string vertexShaderCode = ReadFile("../src/shader.vert");
+const std::string fragmentShaderCode = ReadFile("../src/shader.frag");
+const std::string computeShaderCode = ReadFile("../src/shader.comp");
 
 void SavePPM(std::string filename, int width, int height, char* data) {
 	std::ofstream file;
@@ -1684,11 +1698,74 @@ private:
 		}
 	}
 
-	VkShaderModule CreateShaderModule(const std::vector<char>& code) {
+	std::vector<uint32_t> GLSLToSPIRV(const std::string& code, const EShLanguage stage) {
+		glslang::InitializeProcess();
+
+		glslang::TShader shader(stage);
+
+		const char* codes[] = {code.c_str()};
+		const char* const* ptrCodes = codes;
+		shader.setStrings(ptrCodes, 1);
+
+		shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
+		shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_3);
+		shader.setEnvTarget(glslang::EshTargetSpv, glslang::EShTargetSpv_1_6);
+
+		shader.parse(GetDefaultResources(), 100, false, EShMsgDefault);
+
+		std::string shaderLog;
+		shaderLog.append(shader.getInfoLog());
+		if (stage == EShLangFragment) {
+			std::cout << "Parsing Fragment Shader: ";
+		}
+		if (stage == EShLangVertex) {
+			std::cout << "Parsing Vertex Shader: ";
+		}
+		if (stage == EShLangCompute) {
+			std::cout << "Parsing Compute Shader: ";
+		}
+		if (shaderLog.size() > 0) {
+			std::cout << shaderLog << std::endl;
+		} else {
+			std::cout << "Success" << std::endl;
+		}
+
+		glslang::TProgram program;
+		program.addShader(&shader);
+		program.link(EShMsgDefault);
+
+		std::string programLog;
+		programLog.append(program.getInfoLog());
+		if (stage == EShLangFragment) {
+			std::cout << "Linking Fragment Program: ";
+		}
+		if (stage == EShLangVertex) {
+			std::cout << "Linking Vertex Program: ";
+		}
+		if (stage == EShLangCompute) {
+			std::cout << "Linking Compute Program: ";
+		}
+		if (programLog.size() > 0) {
+			std::cout << programLog << std::endl;
+		} else {
+			std::cout << "Success" << std::endl;
+		}
+
+		glslang::TIntermediate* intermediate = program.getIntermediate(stage);
+		
+		std::vector<uint32_t> spirv;
+		glslang::GlslangToSpv(*intermediate, spirv);
+
+		glslang::FinalizeProcess();
+
+		return spirv;
+	}
+
+	VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code) {
 		VkShaderModuleCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		createInfo.codeSize = code.size();
-		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+		createInfo.codeSize = code.size() * sizeof(uint32_t);
+		createInfo.pCode = code.data();
 
 		VkShaderModule shaderModule;
 		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
@@ -1714,8 +1791,8 @@ private:
 	void CreateGraphicsPipeline() {
 		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 
-		shaderStages[0] = CreateShaderStageInfo(CreateShaderModule(ReadFile("vertex.spv")), VK_SHADER_STAGE_VERTEX_BIT, "main");
-		shaderStages[1] = CreateShaderStageInfo(CreateShaderModule(ReadFile("fragment.spv")), VK_SHADER_STAGE_FRAGMENT_BIT, "main");
+		shaderStages[0] = CreateShaderStageInfo(CreateShaderModule(GLSLToSPIRV(vertexShaderCode, EShLangVertex)), VK_SHADER_STAGE_VERTEX_BIT, "main");
+		shaderStages[1] = CreateShaderStageInfo(CreateShaderModule(GLSLToSPIRV(fragmentShaderCode, EShLangFragment)), VK_SHADER_STAGE_FRAGMENT_BIT, "main");
 
 		VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
 		VkVertexInputAttributeDescription attributeDescription = Vertex::getAttributeDescription();
@@ -1811,7 +1888,7 @@ private:
 
 	void CreateComputePipeline() {
 		VkPipelineShaderStageCreateInfo computeShaderStage{};
-		computeShaderStage = CreateShaderStageInfo(CreateShaderModule(ReadFile("compute.spv")), VK_SHADER_STAGE_COMPUTE_BIT, "main");
+		computeShaderStage = CreateShaderStageInfo(CreateShaderModule(GLSLToSPIRV(computeShaderCode, EShLangCompute)), VK_SHADER_STAGE_COMPUTE_BIT, "main");
 
 		VkPushConstantRange pushConstantRange{};
 		pushConstantRange.offset = 0;

@@ -1,7 +1,5 @@
 #version 450
 
-#pragma shader_stage(fragment)
-
 layout(set = 0, binding = 1, rgba32f) uniform readonly imageBuffer texelBuffer;
 
 layout(push_constant) uniform PushConstants {

@@ -1,7 +1,5 @@
 #version 450
 
-#pragma shader_stage(compute)
-
 #extension GL_EXT_scalar_block_layout : require
 
 precision highp float;
