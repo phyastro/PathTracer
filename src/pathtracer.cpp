@@ -3,12 +3,13 @@
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 #include <GLFW/glfw3.h>
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_vulkan.h"
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <json/json.hpp>
+#include <portable-file-dialogs/portable-file-dialogs.h>
 
 #include <iostream>
 #include <stdexcept>
@@ -3138,6 +3139,8 @@ private:
     
     void MainLoop() {
 		bool isWindowFocused = false;
+		bool isLoadScene = false;
+		bool isSaveScene = false;
 
 		double start = 0;
 		double end = 0;
@@ -3165,7 +3168,6 @@ private:
 		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 
 		scene = ReadJSON("../scenes/scene2.json");
-
 		UpdateFromJSON();
 
         while (!glfwWindowShouldClose(window)) {
@@ -3190,6 +3192,8 @@ private:
 					ImGui::Text("Camera Angle: (%0.3f, %0.3f)", camera.angle.x, camera.angle.y);
 					ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", camera.pos.x, camera.pos.y, camera.pos.z);
 					isVSyncChanged = ImGui::Checkbox("VSync", &VSync);
+					isLoadScene |= ImGui::Button("Load Scene");
+					isSaveScene |= ImGui::Button("Save Scene");
 					isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
 					isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
 					ImGui::Separator();
@@ -3358,9 +3362,33 @@ private:
 				}
 
 				ImGui::Render();
-
-				isReset |= isUpdateUBO;
 			}
+
+			if (isLoadScene) {
+				std::vector<std::string> fileDir = pfd::open_file("Load Scene", "../", {"All Files", "*"}, pfd::opt::none).result();
+
+				if (!fileDir.empty()) {
+					scene = ReadJSON(fileDir.at(0));
+					UpdateFromJSON();
+
+					isUpdateUBO = true;
+				}
+
+				isLoadScene = false;
+			}
+
+			if (isSaveScene) {
+				std::string fileDir = pfd::save_file("Save Scene", "../", {"All Files", "*"}, pfd::opt::force_overwrite).result();
+
+				if(!fileDir.empty()) {
+					UpdateToJSON();
+					SaveJSON(fileDir, scene.dump(4, (char)32, true));
+				}
+
+				isSaveScene = false;
+			}
+
+			isReset |= isUpdateUBO;
 
 			DrawFrame();
 
@@ -3413,9 +3441,6 @@ private:
         }
 
 		vkDeviceWaitIdle(device);
-
-		UpdateToJSON();
-		SaveJSON("../scenes/scene2.json", scene.dump(4, (char)32, true));
 
 		if (OFFSCREENRENDER) {
 			VkImageSubresource subresource{};
