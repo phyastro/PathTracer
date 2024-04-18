@@ -1,0 +1,174 @@
+{
+    "camera": {
+        "position": [
+            7.82771,
+            3.81198,
+            -1.33845
+        ],
+        "angle": [
+            265.03055,
+            -23.51202
+        ],
+        "ISO": 1600,
+        "size": 0.057,
+        "apertureSize": 0.0025,
+        "apertureDistance": 0.049,
+        "lensRadius": 0.01,
+        "lensFocalLength": 0.03,
+        "lensThickness": 0.0,
+        "lensDistance": 0.05
+    },
+    "sphere": [
+        {
+            "position": [
+                0.0,
+                3.44,
+                0.0
+            ],
+            "radius": 1.0,
+            "materialID": 1
+        },
+        {
+            "position": [
+                -0.38,
+                1.29,
+                -0.17
+            ],
+            "radius": 1.0,
+            "materialID": 2
+        },
+        {
+            "position": [
+                0.0,
+                1.51,
+                -3.0
+            ],
+            "radius": 1.27,
+            "materialID": 4
+        }
+    ],
+    "plane": [
+        {
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "materialID": 1
+        }
+    ],
+    "box": [
+        {
+            "position": [
+                3.47,
+                0.92,
+                -0.89
+            ],
+            "rotation": [
+                0.0,
+                58.31,
+                0.0
+            ],
+            "size": [
+                1.5,
+                1.5,
+                1.5
+            ],
+            "materialID": 1
+        },
+        {
+            "position": [
+                -0.99,
+                3.0,
+                -4.07
+            ],
+            "rotation": [
+                -47.4,
+                -24.6,
+                0.0
+            ],
+            "size": [
+                7.2,
+                2.19,
+                0.45
+            ],
+            "materialID": 5
+        }
+    ],
+    "lens": [
+        {
+            "position": [
+                2.77,
+                1.2,
+                -4.0
+            ],
+            "rotation": [
+                5.3,
+                -254.89999,
+                -51.0
+            ],
+            "radius": 1.2,
+            "focalLength": 1.0,
+            "thickness": 0.0,
+            "isConverging": true,
+            "materialID": 4
+        }
+    ],
+    "material": [
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 100.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 470.0,
+                "sigma": 6.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 0.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 12.5
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 6.5,
+                "isInvert": true
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 100.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 2185.0,
+                "luminosity": 22.9
+            }
+        }
+    ]
+}

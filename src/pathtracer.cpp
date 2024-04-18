@@ -8,6 +8,7 @@
 #include "imgui_impl_vulkan.h"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
+#include <json/json.hpp>
 
 #include <iostream>
 #include <stdexcept>
@@ -841,10 +842,37 @@ std::string ReadFile(const std::string& fileDir) {
 }
 
 const std::string vertexShaderCode = ReadFile("../src/shader.vert");
+
 const std::string fragmentShaderCode = ReadFile("../src/shader.frag");
+
 const std::string computeShaderCode = ReadFile("../src/shader.comp");
 
-void SavePPM(std::string filename, int width, int height, char* data) {
+nlohmann::ordered_json ReadJSON(const std::string& fileDir) {
+	std::ifstream file(fileDir);
+
+	if (!file.is_open()) {
+		std::string error;
+		error.append("Failed To Open The JSON File With Directory ");
+		error.append(fileDir.c_str());
+
+		throw std::runtime_error(error);
+	}
+
+	nlohmann::ordered_json json;
+	file >> json;
+
+	return json;
+}
+
+void SaveJSON(const std::string& fileDir, const std::string& json) {
+	std::ofstream file(fileDir);
+
+	file << json;
+
+	file.close();
+}
+
+void SavePPM(const std::string& filename, int width, int height, char* data) {
 	std::ofstream file;
 	file.open(filename, std::ios::out | std::ios::binary);
 
@@ -861,46 +889,14 @@ void SavePPM(std::string filename, int width, int height, char* data) {
 	file.close();
 }
 
-void World1(Camera& camera, std::vector<sphere>& spheres, std::vector<plane>& planes, std::vector<box>& boxes, std::vector<lens>& lenses, std::vector<material>& materials) {
-	// Camera
-	camera.pos = glm::vec3(6.332f, 3.855f, 3.140f);
-	camera.angle = glm::vec2(225.093f, -31.512f);
-	camera.ISO = 1600;
-	camera.size = 0.057f;
-	camera.apertureSize = 0.0025f;
-	camera.apertureDist = 0.049f;
-	camera.lensRadius = 0.0100f;
-	camera.lensFocalLength = 0.0300f;
-	camera.lensThickness = 0.0000f;
-	camera.lensDistance = 0.050f;
+double RoundDecimal(double number, double precision) {
+	if (number >= 0.0) {
+		number = static_cast<int>(number * precision + 0.5);
+	} else {
+		number = static_cast<int>(number * precision - 0.5);
+	}
 
-	// Spheres
-	sphere sphere1 = { { 0.0f, 1.0f, 0.0f }, 1.0f, 1 };
-	sphere sphere2 = { { 5.0f, 1.0f, -1.0f }, 1.0f, 2 };
-	sphere sphere3 = { { 0.0f, 4.0f, -3.0f }, 1.0f, 3 };
-	spheres.push_back(sphere1);
-	spheres.push_back(sphere2);
-	spheres.push_back(sphere3);
-
-	// Planes
-	plane plane1 = { { 0.0f, 0.0f, 0.0f }, 1 };
-	planes.push_back(plane1);
-
-	// Boxes
-	box box1 = { { 3.0f, 0.75f, 1.0f }, { 0.0f, 58.31f, 0.0f }, { 1.5f, 1.5f, 1.5f }, 1 };
-	boxes.push_back(box1);
-	
-	// Lenses
-	lens lens1 = { { 5.0f, 1.2f, -4.0f }, { 0.0f, 0.0f, 0.0f }, 1.2f, 1.0f, 0.0f, true, 1 };
-	lenses.push_back(lens1);
-
-	// Materials
-	material material1 = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
-	material material2 = { { 470.0f, 6.0f, 0 }, { 5500.0f, 0.0f } };
-	material material3 = { { 550.0f, 0.0f, 0 }, { 5500.0f, 12.5f } };
-	materials.push_back(material1);
-	materials.push_back(material2);
-	materials.push_back(material3);
+	return number / precision;
 }
 
 float SpectralPowerDistribution(float l, float l_peak, float d, float invert) {
@@ -1068,12 +1064,14 @@ private:
 	int pathLength = 5;
 	int tonemap = TONEMAP;
 
+	nlohmann::ordered_json scene;
+
+	Camera camera{};
 	std::vector<sphere> spheres;
 	std::vector<plane> planes;
 	std::vector<box> boxes;
 	std::vector<lens> lenses;
 	std::vector<material> materials;
-	Camera camera{};
 
     void InitWindow() {
 		glfwInit();
@@ -2439,6 +2437,187 @@ private:
 		ImGui_ImplVulkan_CreateFontsTexture();
 	}
 
+	void UpdateFromJSON() {
+		camera.pos.x = scene["camera"]["position"][0];
+		camera.pos.y = scene["camera"]["position"][1];
+		camera.pos.z = scene["camera"]["position"][2];
+
+		camera.angle.x = scene["camera"]["angle"][0];
+		camera.angle.y = scene["camera"]["angle"][1];
+
+		camera.ISO = scene["camera"]["ISO"];
+
+		camera.size = scene["camera"]["size"];
+
+		camera.apertureSize = scene["camera"]["apertureSize"];
+
+		camera.apertureDist = scene["camera"]["apertureDistance"];
+
+		camera.lensRadius = scene["camera"]["lensRadius"];
+
+		camera.lensFocalLength = scene["camera"]["lensFocalLength"];
+
+		camera.lensThickness = scene["camera"]["lensThickness"];
+
+		camera.lensDistance = scene["camera"]["lensDistance"];
+
+		spheres.resize(scene["sphere"].size());
+		for (size_t i = 0; i < spheres.size(); i++) {
+			spheres[i].pos[0] = scene["sphere"][i]["position"][0];
+			spheres[i].pos[1] = scene["sphere"][i]["position"][1];
+			spheres[i].pos[2] = scene["sphere"][i]["position"][2];
+
+			spheres[i].radius = scene["sphere"][i]["radius"];
+
+			spheres[i].materialID = scene["sphere"][i]["materialID"];
+		}
+
+		planes.resize(scene["plane"].size());
+		for (size_t i = 0; i < planes.size(); i++) {
+			planes[i].pos[0] = scene["plane"][i]["position"][0];
+			planes[i].pos[1] = scene["plane"][i]["position"][1];
+			planes[i].pos[2] = scene["plane"][i]["position"][2];
+
+			planes[i].materialID = scene["plane"][i]["materialID"];
+		}
+
+		boxes.resize(scene["box"].size());
+		for (size_t i = 0; i < boxes.size(); i++) {
+			boxes[i].pos[0] = scene["box"][i]["position"][0];
+			boxes[i].pos[1] = scene["box"][i]["position"][1];
+			boxes[i].pos[2] = scene["box"][i]["position"][2];
+
+			boxes[i].rotation[0] = scene["box"][i]["rotation"][0];
+			boxes[i].rotation[1] = scene["box"][i]["rotation"][1];
+			boxes[i].rotation[2] = scene["box"][i]["rotation"][2];
+
+			boxes[i].size[0] = scene["box"][i]["size"][0];
+			boxes[i].size[1] = scene["box"][i]["size"][1];
+			boxes[i].size[2] = scene["box"][i]["size"][2];
+
+			boxes[i].materialID = scene["box"][i]["materialID"];
+		}
+
+		lenses.resize(scene["lens"].size());
+		for (size_t i = 0; i < lenses.size(); i++) {
+			lenses[i].pos[0] = scene["lens"][i]["position"][0];
+			lenses[i].pos[1] = scene["lens"][i]["position"][1];
+			lenses[i].pos[2] = scene["lens"][i]["position"][2];
+
+			lenses[i].rotation[0] = scene["lens"][i]["rotation"][0];
+			lenses[i].rotation[1] = scene["lens"][i]["rotation"][1];
+			lenses[i].rotation[2] = scene["lens"][i]["rotation"][2];
+
+			lenses[i].radius = scene["lens"][i]["radius"];
+
+			lenses[i].focalLength = scene["lens"][i]["focalLength"];
+
+			lenses[i].thickness = scene["lens"][i]["thickness"];
+
+			lenses[i].isConverging = scene["lens"][i]["isConverging"];
+
+			lenses[i].materialID = scene["lens"][i]["materialID"];
+		}
+
+		materials.resize(scene["material"].size());
+		for (size_t i = 0; i < materials.size(); i++) {
+			materials[i].reflection[0] = scene["material"][i]["reflection"]["peakWavelength"];
+			materials[i].reflection[1] = scene["material"][i]["reflection"]["sigma"];
+			materials[i].reflection[2] = (float)scene["material"][i]["reflection"]["isInvert"];
+
+			materials[i].emission[0] = scene["material"][i]["emission"]["temperature"];
+			materials[i].emission[1] = scene["material"][i]["emission"]["luminosity"];
+		}
+	}
+
+	void UpdateToJSON() {
+		scene["camera"]["position"][0] = RoundDecimal((double)camera.pos.x, 1e5);
+		scene["camera"]["position"][1] = RoundDecimal((double)camera.pos.y, 1e5);
+		scene["camera"]["position"][2] = RoundDecimal((double)camera.pos.z, 1e5);
+
+		scene["camera"]["angle"][0] = RoundDecimal((double)camera.angle.x, 1e5);
+		scene["camera"]["angle"][1] = RoundDecimal((double)camera.angle.y, 1e5);
+
+		scene["camera"]["ISO"] = camera.ISO;
+
+		scene["camera"]["size"] = RoundDecimal((double)camera.size, 1e5);
+
+		scene["camera"]["apertureSize"] = RoundDecimal((double)camera.apertureSize, 1e5);
+
+		scene["camera"]["apertureDistance"] = RoundDecimal((double)camera.apertureDist, 1e5);
+
+		scene["camera"]["lensRadius"] = RoundDecimal((double)camera.lensRadius, 1e5);
+
+		scene["camera"]["lensFocalLength"] = RoundDecimal((double)camera.lensFocalLength, 1e5);
+
+		scene["camera"]["lensThickness"] = RoundDecimal((double)camera.lensThickness, 1e5);
+
+		scene["camera"]["lensDistance"] = RoundDecimal((double)camera.lensDistance, 1e5);
+
+		for (size_t i = 0; i < spheres.size(); i++) {
+			scene["sphere"][i]["position"][0] = RoundDecimal((double)spheres[i].pos[0], 1e5);
+			scene["sphere"][i]["position"][1] = RoundDecimal((double)spheres[i].pos[1], 1e5);
+			scene["sphere"][i]["position"][2] = RoundDecimal((double)spheres[i].pos[2], 1e5);;
+
+			scene["sphere"][i]["radius"] = RoundDecimal((double)spheres[i].radius, 1e5);
+
+			scene["sphere"][i]["materialID"] = spheres[i].materialID;
+		}
+
+		for (size_t i = 0; i < planes.size(); i++) {
+			scene["plane"][i]["position"][0] = RoundDecimal((double)planes[i].pos[0], 1e5);
+			scene["plane"][i]["position"][1] = RoundDecimal((double)planes[i].pos[1], 1e5);
+			scene["plane"][i]["position"][2] = RoundDecimal((double)planes[i].pos[2], 1e5);
+
+			scene["plane"][i]["materialID"] = planes[i].materialID;
+		}
+
+		for (size_t i = 0; i < boxes.size(); i++) {
+			scene["box"][i]["position"][0] = RoundDecimal((double)boxes[i].pos[0], 1e5);
+			scene["box"][i]["position"][1] = RoundDecimal((double)boxes[i].pos[1], 1e5);
+			scene["box"][i]["position"][2] = RoundDecimal((double)boxes[i].pos[2], 1e5);
+
+			scene["box"][i]["rotation"][0] = RoundDecimal((double)boxes[i].rotation[0], 1e5);
+			scene["box"][i]["rotation"][1] = RoundDecimal((double)boxes[i].rotation[1], 1e5);
+			scene["box"][i]["rotation"][2] = RoundDecimal((double)boxes[i].rotation[2], 1e5);
+
+			scene["box"][i]["size"][0] = RoundDecimal((double)boxes[i].size[0], 1e5);
+			scene["box"][i]["size"][1] = RoundDecimal((double)boxes[i].size[1], 1e5);
+			scene["box"][i]["size"][2] = RoundDecimal((double)boxes[i].size[2], 1e5);
+
+			scene["box"][i]["materialID"] = boxes[i].materialID;
+		}
+
+		for (size_t i = 0; i < lenses.size(); i++) {
+			scene["lens"][i]["position"][0] = RoundDecimal((double)lenses[i].pos[0], 1e5);
+			scene["lens"][i]["position"][1] = RoundDecimal((double)lenses[i].pos[1], 1e5);
+			scene["lens"][i]["position"][2] = RoundDecimal((double)lenses[i].pos[2], 1e5);
+
+			scene["lens"][i]["rotation"][0] = RoundDecimal((double)lenses[i].rotation[0], 1e5);
+			scene["lens"][i]["rotation"][1] = RoundDecimal((double)lenses[i].rotation[1], 1e5);
+			scene["lens"][i]["rotation"][2] = RoundDecimal((double)lenses[i].rotation[2], 1e5);
+
+			scene["lens"][i]["radius"] = RoundDecimal((double)lenses[i].radius, 1e5);
+
+			scene["lens"][i]["focalLength"] = RoundDecimal((double)lenses[i].focalLength, 1e5);
+
+			scene["lens"][i]["thickness"] = RoundDecimal((double)lenses[i].thickness, 1e5);
+
+			scene["lens"][i]["isConverging"] = lenses[i].isConverging;
+
+			scene["lens"][i]["materialID"] = lenses[i].materialID;
+		}
+
+		for (size_t i = 0; i < materials.size(); i++) {
+			scene["material"][i]["reflection"]["peakWavelength"] = RoundDecimal((double)materials[i].reflection[0], 1e5);
+			scene["material"][i]["reflection"]["sigma"] = RoundDecimal((double)materials[i].reflection[1], 1e5);
+			scene["material"][i]["reflection"]["isInvert"] = (bool)materials[i].reflection[2];
+
+			scene["material"][i]["emission"]["temperature"] = RoundDecimal((double)materials[i].emission[0], 1e5);
+			scene["material"][i]["emission"]["luminosity"] = RoundDecimal((double)materials[i].emission[1], 1e5);
+		}
+	}
+
 	void HandleEvents(glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isWindowFocused) {
 		glfwPollEvents();
 
@@ -2985,7 +3164,9 @@ private:
 		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
 		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 
-		World1(camera, spheres, planes, boxes, lenses, materials);
+		scene = ReadJSON("../scenes/scene2.json");
+
+		UpdateFromJSON();
 
         while (!glfwWindowShouldClose(window)) {
 			if (!OFFSCREENRENDER) {
@@ -3232,6 +3413,9 @@ private:
         }
 
 		vkDeviceWaitIdle(device);
+
+		UpdateToJSON();
+		SaveJSON("../scenes/scene2.json", scene.dump(4, (char)32, true));
 
 		if (OFFSCREENRENDER) {
 			VkImageSubresource subresource{};
