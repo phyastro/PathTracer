@@ -900,6 +900,10 @@ double RoundDecimal(double number, double precision) {
 	return number / precision;
 }
 
+bool IsInRange(int x, int a, int b) {
+	return (x >= a) && (x <= b);
+}
+
 float SpectralPowerDistribution(float l, float l_peak, float d, float invert) {
 	// Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
 	// Using Gaussian Function To Predict Spectral Radiance
@@ -2053,14 +2057,6 @@ private:
 	}
 
 	void CreateUniformBuffer() {
-		for (int i = 0; i < MAX_OBJECTS_SIZE; i++) {
-			ubo.packedObjects[i] = 0.0f;
-		}
-
-		for (int i = 0; i < MAX_MATERIALS_SIZE; i++) {
-			ubo.packedMaterials[i] = 0.0f;
-		}
-
 		for (int i = 0; i < std::size(CIEXYZ2006); i++) {
 			ubo.CIEXYZ2006[i] = CIEXYZ2006[i];
 		}
@@ -2968,6 +2964,8 @@ private:
 			for (int i = 0; i < MAX_OBJECTS_SIZE; i++) {
 				if (objectsArray.size() > i) {
 					ubo.packedObjects[i] = objectsArray[i];
+				} else {
+					ubo.packedObjects[i] = 0.0f;
 				}
 			}
 
@@ -2982,6 +2980,8 @@ private:
 			for (int i = 0; i < MAX_MATERIALS_SIZE; i++) {
 				if (materialsArray.size() > i) {
 					ubo.packedMaterials[i] = materialsArray[i];
+				} else {
+					ubo.packedMaterials[i] = 0.0f;
 				}
 			}
 
@@ -3167,7 +3167,7 @@ private:
 		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
 		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 
-		scene = ReadJSON("../scenes/scene2.json");
+		scene = ReadJSON("../scenes/scene1.json");
 		UpdateFromJSON();
 
         while (!glfwWindowShouldClose(window)) {
@@ -3240,39 +3240,43 @@ private:
 						static int objectSelection = 0;
 
 						int numObjs = 0;
-						if ((objectSelection < (numObjs + spheres.size())) && (objectSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", objectSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", spheres[objectSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[objectSelection - numObjs].radius, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[objectSelection - numObjs].materialID, 0.02f);
+						int id = objectSelection - numObjs;
+						if (IsInRange(id, 0, spheres.size() - 1)) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", id + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", spheres[id].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[id].radius, 0.01f);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[id].materialID, 0.02f);
 						}
 						numObjs += (int)spheres.size();
 
-						if ((objectSelection < (numObjs + planes.size())) && (objectSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", objectSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", planes[objectSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &planes[objectSelection - numObjs].materialID, 0.02f);
+						id = objectSelection - numObjs;
+						if (IsInRange(id, 0, planes.size() - 1)) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", id + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", planes[id].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &planes[id].materialID, 0.02f);
 						}
 						numObjs += (int)planes.size();
 
-						if ((objectSelection < (numObjs + boxes.size())) && (objectSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", objectSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", boxes[objectSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[objectSelection - numObjs].rotation, 0.1f);
-							isUpdateUBO |= ImGui::DragFloat3("Size", boxes[objectSelection - numObjs].size, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[objectSelection - numObjs].materialID, 0.02f);
+						id = objectSelection - numObjs;
+						if (IsInRange(id, 0, boxes.size() - 1)) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", id + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", boxes[id].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[id].rotation, 0.1f);
+							isUpdateUBO |= ImGui::DragFloat3("Size", boxes[id].size, 0.01f);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[id].materialID, 0.02f);
 						}
 						numObjs += (int)boxes.size();
 
-						if ((objectSelection < (numObjs + lenses.size())) && (objectSelection > (numObjs - 1))) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", objectSelection - numObjs + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", lenses[objectSelection - numObjs].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[objectSelection - numObjs].rotation, 0.1f);
-							isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[objectSelection - numObjs].radius, 0.001f);
-							isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[objectSelection - numObjs].focalLength, 0.001f);
-							isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[objectSelection - numObjs].thickness, 0.001f);
-							isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[objectSelection - numObjs].isConverging);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[objectSelection - numObjs].materialID, 0.02f);
+						id = objectSelection - numObjs;
+						if (IsInRange(id, 0, lenses.size() - 1)) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", id + 1);
+							isUpdateUBO |= ImGui::DragFloat3("Position", lenses[id].pos, 0.01f);
+							isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[id].rotation, 0.1f);
+							isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[id].radius, 0.001f);
+							isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[id].focalLength, 0.001f);
+							isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[id].thickness, 0.001f);
+							isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[id].isConverging);
+							isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[id].materialID, 0.02f);
 						}
 						numObjs += (int)lenses.size();
 						ImGui::Separator();
@@ -3292,16 +3296,48 @@ private:
 							spheres.push_back(newsphere);
 							isUpdateUBO = true;
 						}
+
 						if (ImGui::Button("Add New Plane")) {
 							planes.push_back(newplane);
 							isUpdateUBO = true;
 						}
+
 						if (ImGui::Button("Add New Box")) {
 							boxes.push_back(newbox);
 							isUpdateUBO = true;
 						}
+
 						if (ImGui::Button("Add New Lens")) {
 							lenses.push_back(newlens);
+							isUpdateUBO = true;
+						}
+
+						if (ImGui::Button("Delete Object")) {
+							numObjs = 0;
+							id = objectSelection - numObjs;
+							if (IsInRange(id, 0, spheres.size() - 1)) {
+								spheres.erase(std::next(spheres.begin(), id));
+							}
+							numObjs += (int)spheres.size();
+
+							id = objectSelection - numObjs;
+							if (IsInRange(id, 0, planes.size() - 1)) {
+								planes.erase(std::next(planes.begin(), id));
+							}
+							numObjs += (int)planes.size();
+
+							id = objectSelection - numObjs;
+							if (IsInRange(id, 0, boxes.size() - 1)) {
+								boxes.erase(std::next(boxes.begin(), id));
+							}
+							numObjs += (int)boxes.size();
+
+							id = objectSelection - numObjs;
+							if (IsInRange(id, 0, lenses.size() - 1)) {
+								lenses.erase(std::next(lenses.begin(), id));
+							}
+							numObjs += (int)lenses.size();
+
 							isUpdateUBO = true;
 						}
 					}
@@ -3313,6 +3349,7 @@ private:
 						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialSelection + 1);
 						ImGui::Text("Reflection");
 						ImGui::PushID("Reflection");
+
 						spectra.clear();
 						for (int i = 1; i < 101; i++) {
 							float x = 0.01f * float(i) * 330.0f + 390.0f;
@@ -3331,6 +3368,7 @@ private:
 
 						ImGui::Text("Emission");
 						ImGui::PushID("Emission");
+
 						spectra.clear();
 						for (int i = 1; i < 101; i++) {
 							float x = float(i) * 12e-9f;
@@ -3353,6 +3391,11 @@ private:
 
 						if (ImGui::Button("Add New Material")) {
 							materials.push_back(newmaterial);
+							isUpdateUBO = true;
+						}
+
+						if (ImGui::Button("Delete Material")) {
+							materials.erase(std::next(materials.begin(), materialSelection));
 							isUpdateUBO = true;
 						}
 					}
