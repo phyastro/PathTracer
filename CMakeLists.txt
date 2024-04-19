@@ -17,4 +17,4 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/includes/glfw)
 add_subdirectory(${PROJECT_SOURCE_DIR}/includes/imgui)
 add_subdirectory(${PROJECT_SOURCE_DIR}/includes/imgui/backends)
 
-target_link_libraries(PathTracer glfw Vulkan::Vulkan glslang glslang-default-resource-limits SPIRV imgui imgui_backends)
+target_link_libraries(PathTracer glslang glslang-default-resource-limits SPIRV imgui imgui_backends)

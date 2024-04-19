@@ -33,6 +33,7 @@
 
 # Suppress all warnings from external projects.
 set_property(DIRECTORY APPEND PROPERTY COMPILE_OPTIONS -w)
+option(SKIP_SPIRV_TOOLS_INSTALL "Skip installation" ON)
 
 if(ENABLE_OPT AND NOT TARGET SPIRV-Tools-opt)
     if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/spirv-tools)

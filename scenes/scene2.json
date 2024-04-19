@@ -44,7 +44,7 @@
                 -3.0
             ],
             "radius": 1.27,
-            "materialID": 4
+            "materialID": 3
         }
     ],
     "plane": [
@@ -92,7 +92,7 @@
                 2.19,
                 0.45
             ],
-            "materialID": 5
+            "materialID": 4
         }
     ],
     "lens": [
@@ -111,7 +111,7 @@
             "focalLength": 1.0,
             "thickness": 0.0,
             "isConverging": true,
-            "materialID": 4
+            "materialID": 3
         }
     ],
     "material": [
@@ -135,17 +135,6 @@
             "emission": {
                 "temperature": 5500.0,
                 "luminosity": 0.0
-            }
-        },
-        {
-            "reflection": {
-                "peakWavelength": 550.0,
-                "sigma": 0.0,
-                "isInvert": false
-            },
-            "emission": {
-                "temperature": 5500.0,
-                "luminosity": 12.5
             }
         },
         {

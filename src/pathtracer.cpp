@@ -36,6 +36,7 @@ const int PATHLENGTH = 10000;
 const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 
 #define DEBUGMODE
+//#define LAUNCHFROMSOURCE
 #define MAX_OBJECTS_SIZE 1024
 #define MAX_MATERIALS_SIZE 1024
 
@@ -842,11 +843,19 @@ std::string ReadFile(const std::string& fileDir) {
 	return buffer;
 }
 
+#ifdef LAUNCHFROMSOURCE
+const std::string vertexShaderCode = ReadFile("./src/shader.vert");
+
+const std::string fragmentShaderCode = ReadFile("./src/shader.frag");
+
+const std::string computeShaderCode = ReadFile("./src/shader.comp");
+#else
 const std::string vertexShaderCode = ReadFile("../src/shader.vert");
 
 const std::string fragmentShaderCode = ReadFile("../src/shader.frag");
 
 const std::string computeShaderCode = ReadFile("../src/shader.comp");
+#endif
 
 nlohmann::ordered_json ReadJSON(const std::string& fileDir) {
 	std::ifstream file(fileDir);
@@ -901,7 +910,7 @@ double RoundDecimal(double number, double precision) {
 }
 
 bool IsInRange(int x, int a, int b) {
-	return (x >= a) && (x <= b);
+	return (x >= a) && (x <= b) && (b >= a);
 }
 
 float SpectralPowerDistribution(float l, float l_peak, float d, float invert) {
@@ -2528,6 +2537,8 @@ private:
 	}
 
 	void UpdateToJSON() {
+		scene = nlohmann::ordered_json();
+
 		scene["camera"]["position"][0] = RoundDecimal((double)camera.pos.x, 1e5);
 		scene["camera"]["position"][1] = RoundDecimal((double)camera.pos.y, 1e5);
 		scene["camera"]["position"][2] = RoundDecimal((double)camera.pos.z, 1e5);
@@ -3167,7 +3178,11 @@ private:
 		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
 		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
 
+		#ifdef LAUNCHFROMSOURCE
+		scene = ReadJSON("./scenes/scene1.json");
+		#else
 		scene = ReadJSON("../scenes/scene1.json");
+		#endif
 		UpdateFromJSON();
 
         while (!glfwWindowShouldClose(window)) {
@@ -3239,36 +3254,37 @@ private:
 					if (ImGui::CollapsingHeader("Objects")) {
 						static int objectSelection = 0;
 
-						int numObjs = 0;
-						int id = objectSelection - numObjs;
-						if (IsInRange(id, 0, spheres.size() - 1)) {
+						int numSpheres = (int)spheres.size();
+						int numPlanes = (int)planes.size();
+						int numBoxes = (int)boxes.size();
+						int numLenses = (int)lenses.size();
+
+						int id = objectSelection;
+						if (IsInRange(id, 0, numSpheres - 1)) {
 							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", id + 1);
 							isUpdateUBO |= ImGui::DragFloat3("Position", spheres[id].pos, 0.01f);
 							isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[id].radius, 0.01f);
 							isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[id].materialID, 0.02f);
 						}
-						numObjs += (int)spheres.size();
 
-						id = objectSelection - numObjs;
-						if (IsInRange(id, 0, planes.size() - 1)) {
+						id -= numSpheres;
+						if (IsInRange(id, 0, numPlanes - 1)) {
 							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", id + 1);
 							isUpdateUBO |= ImGui::DragFloat3("Position", planes[id].pos, 0.01f);
 							isUpdateUBO |= ImGui::DragInt("Material ID", &planes[id].materialID, 0.02f);
 						}
-						numObjs += (int)planes.size();
 
-						id = objectSelection - numObjs;
-						if (IsInRange(id, 0, boxes.size() - 1)) {
+						id -= numPlanes;
+						if (IsInRange(id, 0, numBoxes - 1)) {
 							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", id + 1);
 							isUpdateUBO |= ImGui::DragFloat3("Position", boxes[id].pos, 0.01f);
 							isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[id].rotation, 0.1f);
 							isUpdateUBO |= ImGui::DragFloat3("Size", boxes[id].size, 0.01f);
 							isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[id].materialID, 0.02f);
 						}
-						numObjs += (int)boxes.size();
 
-						id = objectSelection - numObjs;
-						if (IsInRange(id, 0, lenses.size() - 1)) {
+						id -= numBoxes;
+						if (IsInRange(id, 0, numLenses - 1)) {
 							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", id + 1);
 							isUpdateUBO |= ImGui::DragFloat3("Position", lenses[id].pos, 0.01f);
 							isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[id].rotation, 0.1f);
@@ -3278,65 +3294,76 @@ private:
 							isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[id].isConverging);
 							isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[id].materialID, 0.02f);
 						}
-						numObjs += (int)lenses.size();
+
+						id -= numLenses;
+
 						ImGui::Separator();
 
 						if (ImGui::BeginTable("Objects Table", 1)) {
 							ImGui::TableSetupColumn("Object");
 							ImGui::TableHeadersRow();
-							ItemsTable("Sphere ", objectSelection, 0, (int)spheres.size(), true);
-							ItemsTable("Plane ", objectSelection, (int)(spheres.size()), (int)planes.size(), true);
-							ItemsTable("Box ", objectSelection, (int)(spheres.size() + planes.size()), (int)boxes.size(), true);
-							ItemsTable("Lens ", objectSelection, (int)(spheres.size() + planes.size() + boxes.size()), (int)lenses.size(), true);
+							ItemsTable("Sphere ", objectSelection, 0, numSpheres, true);
+							ItemsTable("Plane ", objectSelection, numSpheres, numPlanes, true);
+							ItemsTable("Box ", objectSelection, numSpheres + numPlanes, numBoxes, true);
+							ItemsTable("Lens ", objectSelection, numSpheres + numPlanes + numBoxes, numLenses, true);
 							ImGui::EndTable();
 						}
 						ImGui::Separator();
 
 						if (ImGui::Button("Add New Sphere")) {
 							spheres.push_back(newsphere);
+
+							objectSelection = numSpheres;
 							isUpdateUBO = true;
 						}
 
 						if (ImGui::Button("Add New Plane")) {
 							planes.push_back(newplane);
+
+							objectSelection = numSpheres + numPlanes;
 							isUpdateUBO = true;
 						}
 
 						if (ImGui::Button("Add New Box")) {
 							boxes.push_back(newbox);
+
+							objectSelection = numSpheres + numPlanes + numBoxes;
 							isUpdateUBO = true;
 						}
 
 						if (ImGui::Button("Add New Lens")) {
 							lenses.push_back(newlens);
+
+							objectSelection = numSpheres + numPlanes + numBoxes + numLenses;
 							isUpdateUBO = true;
 						}
 
 						if (ImGui::Button("Delete Object")) {
-							numObjs = 0;
-							id = objectSelection - numObjs;
-							if (IsInRange(id, 0, spheres.size() - 1)) {
+							id = objectSelection;
+							if (IsInRange(id, 0, numSpheres - 1)) {
 								spheres.erase(std::next(spheres.begin(), id));
+								objectSelection = 0;
 							}
-							numObjs += (int)spheres.size();
 
-							id = objectSelection - numObjs;
-							if (IsInRange(id, 0, planes.size() - 1)) {
+							id -= numSpheres;
+							if (IsInRange(id, 0, numPlanes - 1)) {
 								planes.erase(std::next(planes.begin(), id));
+								objectSelection = 0;
 							}
-							numObjs += (int)planes.size();
 
-							id = objectSelection - numObjs;
+							id -= numPlanes;
 							if (IsInRange(id, 0, boxes.size() - 1)) {
 								boxes.erase(std::next(boxes.begin(), id));
+								objectSelection = 0;
 							}
-							numObjs += (int)boxes.size();
 
-							id = objectSelection - numObjs;
-							if (IsInRange(id, 0, lenses.size() - 1)) {
+							id -= numBoxes;
+							if (IsInRange(id, 0, numLenses - 1)) {
 								lenses.erase(std::next(lenses.begin(), id));
+								objectSelection = 0;
 							}
-							numObjs += (int)lenses.size();
+
+							id -= numLenses;
 
 							isUpdateUBO = true;
 						}
@@ -3346,56 +3373,90 @@ private:
 					if (ImGui::CollapsingHeader("Materials")) {
 						static int materialSelection = 0;
 
-						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialSelection + 1);
-						ImGui::Text("Reflection");
-						ImGui::PushID("Reflection");
+						int numMaterials = (int)materials.size();
 
-						spectra.clear();
-						for (int i = 1; i < 101; i++) {
-							float x = 0.01f * float(i) * 330.0f + 390.0f;
-							spectra.push_back(SpectralPowerDistribution(x, materials[materialSelection].reflection[0], 
-							materials[materialSelection].reflection[1], materials[materialSelection].reflection[2]));
+						if (IsInRange(materialSelection, 0, numMaterials - 1)) {
+							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialSelection + 1);
+							ImGui::Text("Reflection");
+							ImGui::PushID("Reflection");
+
+							spectra.clear();
+							for (int i = 1; i < 101; i++) {
+								float x = 0.01f * float(i) * 330.0f + 390.0f;
+								spectra.push_back(SpectralPowerDistribution(x, materials[materialSelection].reflection[0], 
+								materials[materialSelection].reflection[1], materials[materialSelection].reflection[2]));
+							}
+
+							ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+							isUpdateUBO |= ImGui::DragFloat("Peak Lambda", &materials[materialSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
+							isUpdateUBO |= ImGui::DragFloat("Sigma", &materials[materialSelection].reflection[1], 0.5f, 0.0f, 100.0f);
+							bool isInvertBool;
+							isInvertBool = (bool)materials[materialSelection].reflection[2];
+							isUpdateUBO |= ImGui::Checkbox("Invert", &isInvertBool);
+							materials[materialSelection].reflection[2] = (float)isInvertBool;
+							ImGui::PopID();
+
+							ImGui::Text("Emission");
+							ImGui::PushID("Emission");
+
+							spectra.clear();
+							for (int i = 1; i < 101; i++) {
+								float x = float(i) * 12e-9f;
+								spectra.push_back(BlackBodyRadiation(x, materials[materialSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialSelection].emission[0]));
+							}
+
+							ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+							isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialSelection].emission[0], 5.0f);
+							isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialSelection].emission[1], 0.1f);
+							ImGui::PopID();
 						}
-
-						ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-						isUpdateUBO |= ImGui::DragFloat("Peak Lambda", &materials[materialSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
-						isUpdateUBO |= ImGui::DragFloat("Sigma", &materials[materialSelection].reflection[1], 0.5f, 0.0f, 100.0f);
-						bool isInvertBool;
-						isInvertBool = (bool)materials[materialSelection].reflection[2];
-						isUpdateUBO |= ImGui::Checkbox("Invert", &isInvertBool);
-						materials[materialSelection].reflection[2] = (float)isInvertBool;
-						ImGui::PopID();
-
-						ImGui::Text("Emission");
-						ImGui::PushID("Emission");
-
-						spectra.clear();
-						for (int i = 1; i < 101; i++) {
-							float x = float(i) * 12e-9f;
-							spectra.push_back(BlackBodyRadiation(x, materials[materialSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialSelection].emission[0]));
-						}
-
-						ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-						isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialSelection].emission[0], 5.0f);
-						isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialSelection].emission[1], 0.1f);
-						ImGui::PopID();
 						ImGui::Separator();
 
 						if (ImGui::BeginTable("Materials Table", 1)) {
 							ImGui::TableSetupColumn("Materials");
 							ImGui::TableHeadersRow();
-							ItemsTable("Material ", materialSelection, 0, (int)materials.size(), true);
+							ItemsTable("Material ", materialSelection, 0, numMaterials, true);
 							ImGui::EndTable();
 						}
 						ImGui::Separator();
 
 						if (ImGui::Button("Add New Material")) {
 							materials.push_back(newmaterial);
+
+							materialSelection = numMaterials;
 							isUpdateUBO = true;
 						}
 
 						if (ImGui::Button("Delete Material")) {
-							materials.erase(std::next(materials.begin(), materialSelection));
+							if (IsInRange(materialSelection, 0, numMaterials - 1)) {
+								materials.erase(std::next(materials.begin(), materialSelection));
+								materialSelection = 0;
+
+								for (sphere& sphere : spheres) {
+									if (sphere.materialID > (materialSelection + 1)) {
+										sphere.materialID--;
+									}
+								}
+
+								for (plane& plane : planes) {
+									if (plane.materialID > (materialSelection + 1)) {
+										plane.materialID--;
+									}
+								}
+
+								for (box& box : boxes) {
+									if (box.materialID > (materialSelection + 1)) {
+										box.materialID--;
+									}
+								}
+
+								for (lens& lens : lenses) {
+									if (lens.materialID > (materialSelection + 1)) {
+										lens.materialID--;
+									}
+								}
+							}
+
 							isUpdateUBO = true;
 						}
 					}
@@ -3408,7 +3469,11 @@ private:
 			}
 
 			if (isLoadScene) {
+				#ifdef LAUNCHFROMSOURCE
+				std::vector<std::string> fileDir = pfd::open_file("Load Scene", "./", {"All Files", "*"}, pfd::opt::none).result();
+				#else
 				std::vector<std::string> fileDir = pfd::open_file("Load Scene", "../", {"All Files", "*"}, pfd::opt::none).result();
+				#endif
 
 				if (!fileDir.empty()) {
 					scene = ReadJSON(fileDir.at(0));
@@ -3421,7 +3486,11 @@ private:
 			}
 
 			if (isSaveScene) {
+				#ifdef LAUNCHFROMSOURCE
+				std::string fileDir = pfd::save_file("Save Scene", "./", {"All Files", "*"}, pfd::opt::force_overwrite).result();
+				#else
 				std::string fileDir = pfd::save_file("Save Scene", "../", {"All Files", "*"}, pfd::opt::force_overwrite).result();
+				#endif
 
 				if(!fileDir.empty()) {
 					UpdateToJSON();
