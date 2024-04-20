@@ -25,7 +25,7 @@ layout(set = 0, binding = 1, rgba32f) uniform imageBuffer texelBuffer;
 layout(push_constant) uniform PushConstants {
     ivec2 resolution;
 	int frame;
-    int samples;
+    int currentSamples;
     int samplesPerFrame;
     float FPS;
     float persistence;
@@ -861,11 +861,11 @@ void Accumulate(in vec3 inColor, inout vec3 outColor) {
 	// Then We Get, x^numFrames = 2^(-8) Where x Is Multiply Constant
 	// Also We Know That, numFrames = FPS * time(The Amount Of Time Will Be Needed To Reach 1/256)
 	// Therefore, x = 2^(-8 / (FPS*time))
-	if ((samples == samplesPerFrame) && (frame > samplesPerFrame)) {
+	if ((currentSamples == samplesPerFrame) && (frame > samplesPerFrame)) {
 		float weight = pow(2.0, -8.0 / (FPS * persistence));
 		outColor = ((1.0 - weight) * outColor) + (weight * inColor);
 	} else {
-		int unitSamples = samples / samplesPerFrame;
+		int unitSamples = currentSamples / samplesPerFrame;
 		outColor = ((unitSamples - 1) * inColor + outColor) / unitSamples;
 	}
 }

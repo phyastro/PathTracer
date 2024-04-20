@@ -30,9 +30,6 @@ const unsigned int WIDTH = 1280;
 const unsigned int HEIGHT = 720;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 const bool OFFSCREENRENDER = false;
-const int NUMSAMPLES = 10000;
-const int NUMSAMPLESPERFRAME = 5;
-const int PATHLENGTH = 10000;
 const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 
 #define DEBUGMODE
@@ -155,7 +152,7 @@ struct UniformBufferObject {
 struct PushConstantValues {
 	glm::ivec2 resolution;
 	int frame;
-	int samples;
+	int currentSamples;
 	int samplesPerFrame;
 	float FPS;
 	float persistence;
@@ -977,11 +974,13 @@ class App {
 public:
     void run() {
         InitWindow();
+		glslang::InitializeProcess();
         InitVulkan();
 		if (!OFFSCREENRENDER) {
 			InitImGui();
 		}
         MainLoop();
+		glslang::FinalizeProcess();
         CleanUp();
     }
 private:
@@ -1070,8 +1069,9 @@ private:
 
 	uint32_t currentFrame = 0;
 	int samplesPerFrame = 1;
-	int frame = samplesPerFrame;
-	int samples = samplesPerFrame;
+	int frame = 0;
+	int currentSamples = 0;
+	int numSamples = 10000;
 	float frameTime = 0.0166f;
 
 	float persistence = 0.0625f;
@@ -1079,6 +1079,8 @@ private:
 	int tonemap = TONEMAP;
 
 	nlohmann::ordered_json scene;
+	bool isLoadScene = false;
+	bool isSaveScene = false;
 
 	Camera camera{};
 	std::vector<sphere> spheres;
@@ -1086,6 +1088,10 @@ private:
 	std::vector<box> boxes;
 	std::vector<lens> lenses;
 	std::vector<material> materials;
+
+	bool isImGuiWindowFocused = false;
+	int objectSelection = 0;
+	int materialSelection = 0;
 
     void InitWindow() {
 		glfwInit();
@@ -1468,6 +1474,13 @@ private:
 		}
 
 		if (VSync) {
+			for (const presentModeName& availablePresentModeName : availablePresentModesNames) {
+				if (availablePresentModeName.mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR) {
+					std::cout << "Using Presentation Mode VK_PRESENT_MODE_FIFO_RELAXED_KHR" << std::endl;
+					return availablePresentModeName.mode;
+				}
+			}
+
 			std::cout << "Using Presentation Mode VK_PRESENT_MODE_FIFO_KHR" << std::endl;
 			return VK_PRESENT_MODE_FIFO_KHR;
 		} else {
@@ -1711,8 +1724,6 @@ private:
 	}
 
 	std::vector<uint32_t> GLSLToSPIRV(const std::string& code, const EShLanguage stage) {
-		glslang::InitializeProcess();
-
 		glslang::TShader shader(stage);
 
 		const char* codes[] = {code.c_str()};
@@ -1767,8 +1778,6 @@ private:
 		
 		std::vector<uint32_t> spirv;
 		glslang::GlslangToSpv(*intermediate, spirv);
-
-		glslang::FinalizeProcess();
 
 		return spirv;
 	}
@@ -2417,9 +2426,12 @@ private:
 		}
 
 		IMGUI_CHECKVERSION();
+
 		ImGui::CreateContext();
+
 		io = &ImGui::GetIO(); (void)io;
-		io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+		io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
 		ImGui::StyleColorsDark();
 
 		ImGui_ImplGlfw_InitForVulkan(window, true);
@@ -2441,6 +2453,145 @@ private:
 		ImGui_ImplVulkan_Init(&initInfo);
 
 		ImGui_ImplVulkan_CreateFontsTexture();
+	}
+
+	void DefaultScene() {
+		scene = nlohmann::ordered_json::parse(R"(
+			{
+				"camera": {
+					"position": [
+						6.332,
+						3.855,
+						3.14
+					],
+					"angle": [
+						225.093,
+						-31.512
+					],
+					"ISO": 1600,
+					"size": 0.057,
+					"apertureSize": 0.0025,
+					"apertureDistance": 0.049,
+					"lensRadius": 0.01,
+					"lensFocalLength": 0.03,
+					"lensThickness": 0.0,
+					"lensDistance": 0.05
+				},
+				"sphere": [
+					{
+						"position": [
+							0.0,
+							1.0,
+							0.0
+						],
+						"radius": 1.0,
+						"materialID": 1
+					},
+					{
+						"position": [
+							5.0,
+							1.0,
+							-1.0
+						],
+						"radius": 1.0,
+						"materialID": 2
+					},
+					{
+						"position": [
+							0.0,
+							4.0,
+							-3.0
+						],
+						"radius": 1.0,
+						"materialID": 3
+					}
+				],
+				"plane": [
+					{
+						"position": [
+							0.0,
+							0.0,
+							0.0
+						],
+						"materialID": 1
+					}
+				],
+				"box": [
+					{
+						"position": [
+							3.0,
+							0.75,
+							1.0
+						],
+						"rotation": [
+							0.0,
+							58.31,
+							0.0
+						],
+						"size": [
+							1.5,
+							1.5,
+							1.5
+						],
+						"materialID": 1
+					}
+				],
+				"lens": [
+					{
+						"position": [
+							5.0,
+							1.2,
+							-4.0
+						],
+						"rotation": [
+							0.0,
+							0.0,
+							0.0
+						],
+						"radius": 1.2,
+						"focalLength": 1.0,
+						"thickness": 0.0,
+						"isConverging": true,
+						"materialID": 1
+					}
+				],
+				"material": [
+					{
+						"reflection": {
+							"peakWavelength": 550.0,
+							"sigma": 100.0,
+							"isInvert": false
+						},
+						"emission": {
+							"temperature": 5500.0,
+							"luminosity": 0.0
+						}
+					},
+					{
+						"reflection": {
+							"peakWavelength": 470.0,
+							"sigma": 6.0,
+							"isInvert": false
+						},
+						"emission": {
+							"temperature": 5500.0,
+							"luminosity": 0.0
+						}
+					},
+					{
+						"reflection": {
+							"peakWavelength": 550.0,
+							"sigma": 0.0,
+							"isInvert": false
+						},
+						"emission": {
+							"temperature": 5500.0,
+							"luminosity": 12.5
+						}
+					}
+				]
+			}
+		)");
 	}
 
 	void UpdateFromJSON() {
@@ -2626,12 +2777,12 @@ private:
 		}
 	}
 
-	void HandleEvents(glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos, bool& isWindowFocused) {
+	void HandleEvents(glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos) {
 		glfwPollEvents();
 
 		glm::vec2 cursorPos1 = glm::vec2((float)(ImGui::GetMousePos().x) / (float)W, (float)(H - ImGui::GetMousePos().y) / (float)H);
 
-		if (!isWindowFocused) {
+		if (!isImGuiWindowFocused) {
 			if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 				isReset = true;
 				glm::vec2 dxdy = cursorPos1 - cursorPos;
@@ -2693,6 +2844,357 @@ private:
 			}
 
 			ImGui::PopID();
+		}
+	}
+
+	void ImGuiRender(std::vector<float>& framesGraph) {
+		static sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
+		static plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
+		static box newbox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1 };
+		static lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
+		static material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+
+		static std::vector<float> spectrumGraph{};
+		static std::vector<float> tonemapGraph{};
+
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+
+		ImGuiWindowFlags WinFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize;
+
+		{
+			ImGui::Begin("Scene", NULL, WinFlags);
+			ImGui::SetWindowPos(ImVec2(W - ImGui::GetWindowWidth(), 0));
+			ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f * frameTime, 1.0f / frameTime);
+			ImGui::PlotLines("", framesGraph.data(), (int)framesGraph.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
+			ImGui::Text("Resolution: (%i, %i) px", W, H);
+			ImGui::Text("Samples: %i", currentSamples);
+			ImGui::Text("Camera Angle: (%0.3f, %0.3f)", camera.angle.x, camera.angle.y);
+			ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", camera.pos.x, camera.pos.y, camera.pos.z);
+			isVSyncChanged = ImGui::Checkbox("VSync", &VSync);
+			isLoadScene |= ImGui::Button("Load Scene");
+			isSaveScene |= ImGui::Button("Save Scene");
+			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
+			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
+			ImGui::Separator();
+
+			if (ImGui::CollapsingHeader("Post Processing")) {
+				if (ImGui::BeginTable("Tonemap Table", 1)) {
+					ImGui::TableSetupColumn("Tonemap");
+					ImGui::TableHeadersRow();
+					ItemsTable("None", tonemap, 0, 1, false);
+					ItemsTable("Reinhard", tonemap, 1, 1, false);
+					ItemsTable("ACES Film", tonemap, 2, 1, false);
+					ItemsTable("DEUCES", tonemap, 3, 1, false);
+					ImGui::EndTable();
+				}
+
+				tonemapGraph.clear();
+				for (int i = 1; i < 101; i++) {
+					float x = 0.01f * (float)i;
+					tonemapGraph.push_back(tonemapping(x, tonemap));
+				}
+
+				ImGui::PlotLines("", tonemapGraph.data(), (int)tonemapGraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+			}
+
+			if (ImGui::CollapsingHeader("Camera")) {
+				isReset |= ImGui::DragFloat("Persistence", &persistence, 0.00025f, 0.00025f, 1.0f, "%0.5f");
+				isReset |= ImGui::DragInt("ISO", &camera.ISO, 50, 50, 819200);
+				isReset |= ImGui::DragFloat("Camera Size", &camera.size, 0.001f, 0.001f, 5.0f, "%0.3f");
+				isReset |= ImGui::DragFloat("Aperture Size", &camera.apertureSize, 0.0001f, 0.0001f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Aperture Dist", &camera.apertureDist, 0.001f, 0.001f, camera.lensDistance, "%0.3f");
+				float fov = 2.0f * glm::degrees(::atan(0.5f * camera.size / camera.apertureDist));
+				ImGui::Text("FOV: %0.0f", fov);
+				ImGui::Separator();
+
+				ImGui::Text("Lens");
+				isReset |= ImGui::DragFloat("Radius", &camera.lensRadius, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Focal Length", &camera.lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Thickness", &camera.lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
+				isReset |= ImGui::DragFloat("Distance", &camera.lensDistance, 0.001f, 0.001f, 100.0f, "%0.3f");
+			}
+			ImGui::Separator();
+
+			int numMaterials = (int)materials.size();
+
+			if (ImGui::CollapsingHeader("Objects")) {
+				int numSpheres = (int)spheres.size();
+				int numPlanes = (int)planes.size();
+				int numBoxes = (int)boxes.size();
+				int numLenses = (int)lenses.size();
+
+				int id = objectSelection;
+				if (IsInRange(id, 0, numSpheres - 1)) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", id + 1);
+					isUpdateUBO |= ImGui::DragFloat3("Position", spheres[id].pos, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[id].radius, 0.01f);
+					isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[id].materialID, 0.02f, 1, numMaterials);
+				}
+
+				id -= numSpheres;
+				if (IsInRange(id, 0, numPlanes - 1)) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", id + 1);
+					isUpdateUBO |= ImGui::DragFloat3("Position", planes[id].pos, 0.01f);
+					isUpdateUBO |= ImGui::DragInt("Material ID", &planes[id].materialID, 0.02f, 1, numMaterials);
+				}
+
+				id -= numPlanes;
+				if (IsInRange(id, 0, numBoxes - 1)) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", id + 1);
+					isUpdateUBO |= ImGui::DragFloat3("Position", boxes[id].pos, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[id].rotation, 0.1f);
+					isUpdateUBO |= ImGui::DragFloat3("Size", boxes[id].size, 0.01f);
+					isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[id].materialID, 0.02f, 1, numMaterials);
+				}
+
+				id -= numBoxes;
+				if (IsInRange(id, 0, numLenses - 1)) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", id + 1);
+					isUpdateUBO |= ImGui::DragFloat3("Position", lenses[id].pos, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[id].rotation, 0.1f);
+					isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[id].radius, 0.001f);
+					isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[id].focalLength, 0.001f);
+					isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[id].thickness, 0.001f);
+					isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[id].isConverging);
+					isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[id].materialID, 0.02f, 1, numMaterials);
+				}
+
+				id -= numLenses;
+
+				ImGui::Separator();
+
+				if (ImGui::BeginTable("Objects Table", 1)) {
+					ImGui::TableSetupColumn("Object");
+					ImGui::TableHeadersRow();
+					ItemsTable("Sphere ", objectSelection, 0, numSpheres, true);
+					ItemsTable("Plane ", objectSelection, numSpheres, numPlanes, true);
+					ItemsTable("Box ", objectSelection, numSpheres + numPlanes, numBoxes, true);
+					ItemsTable("Lens ", objectSelection, numSpheres + numPlanes + numBoxes, numLenses, true);
+					ImGui::EndTable();
+				}
+				ImGui::Separator();
+
+				if (ImGui::Button("Add New Sphere")) {
+					spheres.push_back(newsphere);
+
+					objectSelection = numSpheres;
+					isUpdateUBO = true;
+				}
+
+				if (ImGui::Button("Add New Plane")) {
+					planes.push_back(newplane);
+
+					objectSelection = numSpheres + numPlanes;
+					isUpdateUBO = true;
+				}
+
+				if (ImGui::Button("Add New Box")) {
+					boxes.push_back(newbox);
+
+					objectSelection = numSpheres + numPlanes + numBoxes;
+					isUpdateUBO = true;
+				}
+
+				if (ImGui::Button("Add New Lens")) {
+					lenses.push_back(newlens);
+
+					objectSelection = numSpheres + numPlanes + numBoxes + numLenses;
+					isUpdateUBO = true;
+				}
+
+				if (ImGui::Button("Delete Object")) {
+					id = objectSelection;
+					if (IsInRange(id, 0, numSpheres - 1)) {
+						spheres.erase(std::next(spheres.begin(), id));
+						if (objectSelection > 0) {
+							objectSelection--;
+						}
+					}
+
+					id -= numSpheres;
+					if (IsInRange(id, 0, numPlanes - 1)) {
+						planes.erase(std::next(planes.begin(), id));
+						if (objectSelection > 0) {
+							objectSelection--;
+						}
+					}
+
+					id -= numPlanes;
+					if (IsInRange(id, 0, boxes.size() - 1)) {
+						boxes.erase(std::next(boxes.begin(), id));
+						if (objectSelection > 0) {
+							objectSelection--;
+						}
+					}
+
+					id -= numBoxes;
+					if (IsInRange(id, 0, numLenses - 1)) {
+						lenses.erase(std::next(lenses.begin(), id));
+						if (objectSelection > 0) {
+							objectSelection--;
+						}
+					}
+
+					id -= numLenses;
+
+					isUpdateUBO = true;
+				}
+			}
+			ImGui::Separator();
+
+			if (ImGui::CollapsingHeader("Materials")) {
+				if (IsInRange(materialSelection, 0, numMaterials - 1)) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialSelection + 1);
+					ImGui::Text("Reflection");
+					ImGui::PushID("Reflection");
+
+					spectrumGraph.clear();
+					for (int i = 1; i < 101; i++) {
+						float x = 0.01f * float(i) * 330.0f + 390.0f;
+						spectrumGraph.push_back(SpectralPowerDistribution(x, materials[materialSelection].reflection[0], 
+						materials[materialSelection].reflection[1], materials[materialSelection].reflection[2]));
+					}
+
+					ImGui::PlotLines("", spectrumGraph.data(), (int)spectrumGraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+					isUpdateUBO |= ImGui::DragFloat("Peak Lambda", &materials[materialSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
+					isUpdateUBO |= ImGui::DragFloat("Sigma", &materials[materialSelection].reflection[1], 0.5f, 0.0f, 100.0f);
+					bool isInvertBool;
+					isInvertBool = (bool)materials[materialSelection].reflection[2];
+					isUpdateUBO |= ImGui::Checkbox("Invert", &isInvertBool);
+					materials[materialSelection].reflection[2] = (float)isInvertBool;
+					ImGui::PopID();
+
+					ImGui::Text("Emission");
+					ImGui::PushID("Emission");
+
+					spectrumGraph.clear();
+					for (int i = 1; i < 101; i++) {
+						float x = float(i) * 12e-9f;
+						spectrumGraph.push_back(BlackBodyRadiation(x, materials[materialSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialSelection].emission[0]));
+					}
+
+					ImGui::PlotLines("", spectrumGraph.data(), (int)spectrumGraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+					isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialSelection].emission[0], 5.0f, 0.0f);
+					isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialSelection].emission[1], 0.1f, 0.0f);
+					ImGui::PopID();
+				}
+				ImGui::Separator();
+
+				if (ImGui::BeginTable("Materials Table", 1)) {
+					ImGui::TableSetupColumn("Materials");
+					ImGui::TableHeadersRow();
+					ItemsTable("Material ", materialSelection, 0, numMaterials, true);
+					ImGui::EndTable();
+				}
+				ImGui::Separator();
+
+				if (ImGui::Button("Add New Material")) {
+					materials.push_back(newmaterial);
+
+					materialSelection = numMaterials;
+					isUpdateUBO = true;
+				}
+
+				if (ImGui::Button("Delete Material")) {
+					if (IsInRange(materialSelection, 0, numMaterials - 1)) {
+						materials.erase(std::next(materials.begin(), materialSelection));
+
+						for (sphere& sphere : spheres) {
+							if ((sphere.materialID > materialSelection) && (sphere.materialID > 1)) {
+								sphere.materialID--;
+							}
+						}
+
+						for (plane& plane : planes) {
+							if ((plane.materialID > materialSelection) && (plane.materialID > 1)) {
+								plane.materialID--;
+							}
+						}
+
+						for (box& box : boxes) {
+							if ((box.materialID > materialSelection) && (box.materialID > 1)) {
+								box.materialID--;
+							}
+						}
+
+						for (lens& lens : lenses) {
+							if ((lens.materialID > materialSelection) && (lens.materialID > 1)) {
+								lens.materialID--;
+							}
+						}
+
+						if (materialSelection > 0) {
+							materialSelection--;
+						}
+					}
+
+					isUpdateUBO = true;
+				}
+			}
+
+			isImGuiWindowFocused = ImGui::IsWindowFocused();
+			ImGui::End();
+		}
+
+		ImGui::Render();
+	}
+
+	void CleanUpImages() {
+		for (VkFramebuffer framebuffer : framebuffers) {
+			vkDestroyFramebuffer(device, framebuffer, nullptr);
+		}
+
+		if (OFFSCREENRENDER) {
+			vkDestroyImage(device, saveImage, nullptr);
+			vkFreeMemory(device, saveImageMemory, nullptr);
+			vkDestroyImageView(device, processorImageView, nullptr);
+			vkDestroyImage(device, processorImage, nullptr);
+			vkFreeMemory(device, processorImageMemory, nullptr);
+		} else {
+			for (VkImageView imageView : swapChainImageViews) {
+				vkDestroyImageView(device, imageView, nullptr);
+			}
+
+			vkDestroySwapchainKHR(device, swapChain, nullptr);
+		}
+	}
+
+	void CleanUpTexelBuffer() {
+		vkDestroyBufferView(device, texelBufferView, nullptr);
+		vkDestroyBuffer(device, texelBuffer, nullptr);
+		vkFreeMemory(device, texelBufferMemory, nullptr);
+	}
+
+	void LoadScene() {
+		std::vector<std::string> sceneDir = pfd::open_file("Load Scene", "", {"All Files", "*"}, pfd::opt::none).result();
+
+		if (!sceneDir.empty()) {
+			scene = ReadJSON(sceneDir.at(0));
+			UpdateFromJSON();
+
+			objectSelection = 0;
+			materialSelection = 0;
+			isUpdateUBO = true;
+
+			vkDeviceWaitIdle(device);
+
+			CleanUpTexelBuffer();
+
+			CreateTexelBuffer();
+			CreateTexelBufferView();
+
+			UpdateDescriptorSet();
+		}
+	}
+
+	void SaveScene() {
+		std::string sceneDir = pfd::save_file("Save Scene", "", {"All Files", "*"}, pfd::opt::force_overwrite).result();
+
+		if(!sceneDir.empty()) {
+			UpdateToJSON();
+			SaveJSON(sceneDir, scene.dump(4, (char)32, true));
 		}
 	}
 
@@ -2760,7 +3262,7 @@ private:
 		vkCmdEndRenderPass(commandBuffer);
 
 		if (OFFSCREENRENDER) {
-			if (samples >= NUMSAMPLES) {
+			if (currentSamples >= numSamples) {
 				std::array<VkImageMemoryBarrier, 2> imageMemoryBarrierTransfer1{};
 
 				imageMemoryBarrierTransfer1[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2852,32 +3354,6 @@ private:
 		if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Record Compute Command Buffer!");
 		}
-	}
-
-	void CleanUpImages() {
-		for (VkFramebuffer framebuffer : framebuffers) {
-			vkDestroyFramebuffer(device, framebuffer, nullptr);
-		}
-
-		if (OFFSCREENRENDER) {
-			vkDestroyImage(device, saveImage, nullptr);
-			vkFreeMemory(device, saveImageMemory, nullptr);
-			vkDestroyImageView(device, processorImageView, nullptr);
-			vkDestroyImage(device, processorImage, nullptr);
-			vkFreeMemory(device, processorImageMemory, nullptr);
-		} else {
-			for (VkImageView imageView : swapChainImageViews) {
-				vkDestroyImageView(device, imageView, nullptr);
-			}
-
-			vkDestroySwapchainKHR(device, swapChain, nullptr);
-		}
-	}
-
-	void CleanUpTexelBuffer() {
-		vkDestroyBufferView(device, texelBufferView, nullptr);
-		vkDestroyBuffer(device, texelBuffer, nullptr);
-		vkFreeMemory(device, texelBufferMemory, nullptr);
 	}
 
 	void RecreateSwapChain() {
@@ -3007,7 +3483,7 @@ private:
 	void UpdatePushConstant() {
 		pushConstant.resolution = glm::ivec2(W, H);
 		pushConstant.frame = frame;
-		pushConstant.samples = samples;
+		pushConstant.currentSamples = currentSamples;
 		pushConstant.samplesPerFrame = samplesPerFrame;
 		pushConstant.FPS = 1.0f / frameTime;
 		pushConstant.persistence = persistence;
@@ -3028,7 +3504,7 @@ private:
 	}
 
 	void DrawFrame() {
-		bool isGraphicsRender = (!OFFSCREENRENDER) || (OFFSCREENRENDER && (samples >= NUMSAMPLES));
+		bool isGraphicsRender = (!OFFSCREENRENDER) || (OFFSCREENRENDER && (currentSamples >= numSamples));
 
 		vkWaitForFences(device, 1, &computeInFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -3076,7 +3552,7 @@ private:
 
 				if (!isWindowMinimized) {
 					frame = samplesPerFrame;
-					samples = samplesPerFrame;
+					currentSamples = samplesPerFrame;
 				} else {
 					isWindowMinimized = false;
 				}
@@ -3136,7 +3612,7 @@ private:
 
 				if (!isWindowMinimized) {
 					frame = 0;
-					samples = 0;
+					currentSamples = 0;
 				} else {
 					isWindowMinimized = false;
 				}
@@ -3149,370 +3625,70 @@ private:
 	}
     
     void MainLoop() {
-		bool isWindowFocused = false;
-		bool isLoadScene = false;
-		bool isSaveScene = false;
-
-		int objectSelection = 0;
-		int materialSelection = 0;
-
 		double start = 0;
 		double end = 0;
 		double prevEnd = 0;
 
 		if (OFFSCREENRENDER) {
-			samplesPerFrame = NUMSAMPLESPERFRAME;
-			pathLength = PATHLENGTH;
-			frame = samplesPerFrame;
-			samples = samplesPerFrame;
+			std::cout << "Number Of Samples: ";
+			std::cin >> numSamples;
+			std::cout << "Number Of Samples Per Frame: ";
+			std::cin >> samplesPerFrame;
+			std::cout << "Path Length: ";
+			std::cin >> pathLength;
+
 			start = glfwGetTime();
 		}
 
 		glm::vec2 cursorPos = glm::vec2(0.0f, 0.0f);
 		glm::vec3 deltaCamPos = glm::vec3(0.0f, 0.0f, 0.0f);
 
-		std::vector<float> frames;
-		std::vector<float> spectra;
-		std::vector<float> tonemapGraph;
+		std::vector<float> framesGraph;
 
-		sphere newsphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
-		plane newplane = { { 0.0f, 0.0f, 0.0f }, 1 };
-		box newbox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1 };
-		lens newlens { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
-		material newmaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+		if (OFFSCREENRENDER) {
+			std::vector<std::string> sceneDir = pfd::open_file("Load Scene", "", {"All Files", "*"}, pfd::opt::none).result();
 
-		#ifdef LAUNCHFROMSOURCE
-		scene = ReadJSON("./scenes/scene1.json");
-		#else
-		scene = ReadJSON("../scenes/scene1.json");
-		#endif
+			if (sceneDir.empty()) {
+				throw std::runtime_error("No Scene Has Been Selected!");
+			} else {
+				scene = ReadJSON(sceneDir.at(0));
+			}
+		} else {
+			DefaultScene();
+		}
 		UpdateFromJSON();
 
         while (!glfwWindowShouldClose(window)) {
 			if (!OFFSCREENRENDER) {
-				HandleEvents(cursorPos, camera.angle, deltaCamPos, isWindowFocused);
+				HandleEvents(cursorPos, camera.angle, deltaCamPos);
+
 				deltaCamPos *= 3.0f * frameTime;
 				UpdateCameraPos(camera.pos, glm::radians(camera.angle), deltaCamPos);
 
-				ImGui_ImplVulkan_NewFrame();
-				ImGui_ImplGlfw_NewFrame();
-				ImGui::NewFrame();
+				ImGuiRender(framesGraph);
 
-				ImGuiWindowFlags WinFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize;
-
-				{
-					ImGui::Begin("Scene", NULL, WinFlags);
-					ImGui::SetWindowPos(ImVec2(W - ImGui::GetWindowWidth(), 0));
-					ImGui::Text("Render Time: %0.3f ms (%0.1f FPS)", 1000.0f * frameTime, 1.0f / frameTime);
-					ImGui::PlotLines("", frames.data(), (int)frames.size(), 0, NULL, 0.0f, 30.0f, ImVec2(303, 100));
-					ImGui::Text("Resolution: (%i, %i) px", W, H);
-					ImGui::Text("Samples: %i", samples);
-					ImGui::Text("Camera Angle: (%0.3f, %0.3f)", camera.angle.x, camera.angle.y);
-					ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", camera.pos.x, camera.pos.y, camera.pos.z);
-					isVSyncChanged = ImGui::Checkbox("VSync", &VSync);
-					isLoadScene |= ImGui::Button("Load Scene");
-					isSaveScene |= ImGui::Button("Save Scene");
-					isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
-					isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f);
-					ImGui::Separator();
-
-					if (ImGui::CollapsingHeader("Post Processing")) {
-						if (ImGui::BeginTable("Tonemap Table", 1)) {
-							ImGui::TableSetupColumn("Tonemap");
-							ImGui::TableHeadersRow();
-							ItemsTable("None", tonemap, 0, 1, false);
-							ItemsTable("Reinhard", tonemap, 1, 1, false);
-							ItemsTable("ACES Film", tonemap, 2, 1, false);
-							ItemsTable("DEUCES", tonemap, 3, 1, false);
-							ImGui::EndTable();
-						}
-
-						tonemapGraph.clear();
-						for (int i = 1; i < 101; i++) {
-							float x = 0.01f * (float)i;
-							tonemapGraph.push_back(tonemapping(x, tonemap));
-						}
-
-						ImGui::PlotLines("", tonemapGraph.data(), (int)tonemapGraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-					}
-
-					if (ImGui::CollapsingHeader("Camera")) {
-						isReset |= ImGui::DragFloat("Persistence", &persistence, 0.00025f, 0.00025f, 1.0f, "%0.5f");
-						isReset |= ImGui::DragInt("ISO", &camera.ISO, 50, 50, 819200);
-						isReset |= ImGui::DragFloat("Camera Size", &camera.size, 0.001f, 0.001f, 5.0f, "%0.3f");
-						isReset |= ImGui::DragFloat("Aperture Size", &camera.apertureSize, 0.0001f, 0.0001f, 10.0f, "%0.4f");
-						isReset |= ImGui::DragFloat("Aperture Dist", &camera.apertureDist, 0.001f, 0.001f, camera.lensDistance, "%0.3f");
-						float fov = 2.0f * glm::degrees(::atan(0.5f * camera.size / camera.apertureDist));
-						ImGui::Text("FOV: %0.0f", fov);
-						ImGui::Separator();
-
-						ImGui::Text("Lens");
-						isReset |= ImGui::DragFloat("Radius", &camera.lensRadius, 0.0005f, 0.0005f, 10.0f, "%0.4f");
-						isReset |= ImGui::DragFloat("Focal Length", &camera.lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
-						isReset |= ImGui::DragFloat("Thickness", &camera.lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
-						isReset |= ImGui::DragFloat("Distance", &camera.lensDistance, 0.001f, 0.001f, 100.0f, "%0.3f");
-					}
-					ImGui::Separator();
-
-					int numMaterials = (int)materials.size();
-
-					if (ImGui::CollapsingHeader("Objects")) {
-						int numSpheres = (int)spheres.size();
-						int numPlanes = (int)planes.size();
-						int numBoxes = (int)boxes.size();
-						int numLenses = (int)lenses.size();
-
-						int id = objectSelection;
-						if (IsInRange(id, 0, numSpheres - 1)) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", id + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", spheres[id].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[id].radius, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[id].materialID, 0.02f, 1, numMaterials);
-						}
-
-						id -= numSpheres;
-						if (IsInRange(id, 0, numPlanes - 1)) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", id + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", planes[id].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &planes[id].materialID, 0.02f, 1, numMaterials);
-						}
-
-						id -= numPlanes;
-						if (IsInRange(id, 0, numBoxes - 1)) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", id + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", boxes[id].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[id].rotation, 0.1f);
-							isUpdateUBO |= ImGui::DragFloat3("Size", boxes[id].size, 0.01f);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[id].materialID, 0.02f, 1, numMaterials);
-						}
-
-						id -= numBoxes;
-						if (IsInRange(id, 0, numLenses - 1)) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", id + 1);
-							isUpdateUBO |= ImGui::DragFloat3("Position", lenses[id].pos, 0.01f);
-							isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[id].rotation, 0.1f);
-							isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[id].radius, 0.001f);
-							isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[id].focalLength, 0.001f);
-							isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[id].thickness, 0.001f);
-							isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[id].isConverging);
-							isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[id].materialID, 0.02f, 1, numMaterials);
-						}
-
-						id -= numLenses;
-
-						ImGui::Separator();
-
-						if (ImGui::BeginTable("Objects Table", 1)) {
-							ImGui::TableSetupColumn("Object");
-							ImGui::TableHeadersRow();
-							ItemsTable("Sphere ", objectSelection, 0, numSpheres, true);
-							ItemsTable("Plane ", objectSelection, numSpheres, numPlanes, true);
-							ItemsTable("Box ", objectSelection, numSpheres + numPlanes, numBoxes, true);
-							ItemsTable("Lens ", objectSelection, numSpheres + numPlanes + numBoxes, numLenses, true);
-							ImGui::EndTable();
-						}
-						ImGui::Separator();
-
-						if (ImGui::Button("Add New Sphere")) {
-							spheres.push_back(newsphere);
-
-							objectSelection = numSpheres;
-							isUpdateUBO = true;
-						}
-
-						if (ImGui::Button("Add New Plane")) {
-							planes.push_back(newplane);
-
-							objectSelection = numSpheres + numPlanes;
-							isUpdateUBO = true;
-						}
-
-						if (ImGui::Button("Add New Box")) {
-							boxes.push_back(newbox);
-
-							objectSelection = numSpheres + numPlanes + numBoxes;
-							isUpdateUBO = true;
-						}
-
-						if (ImGui::Button("Add New Lens")) {
-							lenses.push_back(newlens);
-
-							objectSelection = numSpheres + numPlanes + numBoxes + numLenses;
-							isUpdateUBO = true;
-						}
-
-						if (ImGui::Button("Delete Object")) {
-							id = objectSelection;
-							if (IsInRange(id, 0, numSpheres - 1)) {
-								spheres.erase(std::next(spheres.begin(), id));
-								if (objectSelection > 0) {
-									objectSelection--;
-								}
-							}
-
-							id -= numSpheres;
-							if (IsInRange(id, 0, numPlanes - 1)) {
-								planes.erase(std::next(planes.begin(), id));
-								if (objectSelection > 0) {
-									objectSelection--;
-								}
-							}
-
-							id -= numPlanes;
-							if (IsInRange(id, 0, boxes.size() - 1)) {
-								boxes.erase(std::next(boxes.begin(), id));
-								if (objectSelection > 0) {
-									objectSelection--;
-								}
-							}
-
-							id -= numBoxes;
-							if (IsInRange(id, 0, numLenses - 1)) {
-								lenses.erase(std::next(lenses.begin(), id));
-								if (objectSelection > 0) {
-									objectSelection--;
-								}
-							}
-
-							id -= numLenses;
-
-							isUpdateUBO = true;
-						}
-					}
-					ImGui::Separator();
-
-					if (ImGui::CollapsingHeader("Materials")) {
-						if (IsInRange(materialSelection, 0, numMaterials - 1)) {
-							ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Material %i", materialSelection + 1);
-							ImGui::Text("Reflection");
-							ImGui::PushID("Reflection");
-
-							spectra.clear();
-							for (int i = 1; i < 101; i++) {
-								float x = 0.01f * float(i) * 330.0f + 390.0f;
-								spectra.push_back(SpectralPowerDistribution(x, materials[materialSelection].reflection[0], 
-								materials[materialSelection].reflection[1], materials[materialSelection].reflection[2]));
-							}
-
-							ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-							isUpdateUBO |= ImGui::DragFloat("Peak Lambda", &materials[materialSelection].reflection[0], 1.0f, 0.0f, 1200.0f);
-							isUpdateUBO |= ImGui::DragFloat("Sigma", &materials[materialSelection].reflection[1], 0.5f, 0.0f, 100.0f);
-							bool isInvertBool;
-							isInvertBool = (bool)materials[materialSelection].reflection[2];
-							isUpdateUBO |= ImGui::Checkbox("Invert", &isInvertBool);
-							materials[materialSelection].reflection[2] = (float)isInvertBool;
-							ImGui::PopID();
-
-							ImGui::Text("Emission");
-							ImGui::PushID("Emission");
-
-							spectra.clear();
-							for (int i = 1; i < 101; i++) {
-								float x = float(i) * 12e-9f;
-								spectra.push_back(BlackBodyRadiation(x, materials[materialSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialSelection].emission[0]));
-							}
-
-							ImGui::PlotLines("", spectra.data(), (int)spectra.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-							isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialSelection].emission[0], 5.0f);
-							isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialSelection].emission[1], 0.1f);
-							ImGui::PopID();
-						}
-						ImGui::Separator();
-
-						if (ImGui::BeginTable("Materials Table", 1)) {
-							ImGui::TableSetupColumn("Materials");
-							ImGui::TableHeadersRow();
-							ItemsTable("Material ", materialSelection, 0, numMaterials, true);
-							ImGui::EndTable();
-						}
-						ImGui::Separator();
-
-						if (ImGui::Button("Add New Material")) {
-							materials.push_back(newmaterial);
-
-							materialSelection = numMaterials;
-							isUpdateUBO = true;
-						}
-
-						if (ImGui::Button("Delete Material")) {
-							if (IsInRange(materialSelection, 0, numMaterials - 1)) {
-								materials.erase(std::next(materials.begin(), materialSelection));
-
-								for (sphere& sphere : spheres) {
-									if ((sphere.materialID > materialSelection) && (sphere.materialID > 1)) {
-										sphere.materialID--;
-									}
-								}
-
-								for (plane& plane : planes) {
-									if ((plane.materialID > materialSelection) && (plane.materialID > 1)) {
-										plane.materialID--;
-									}
-								}
-
-								for (box& box : boxes) {
-									if ((box.materialID > materialSelection) && (box.materialID > 1)) {
-										box.materialID--;
-									}
-								}
-
-								for (lens& lens : lenses) {
-									if ((lens.materialID > materialSelection) && (lens.materialID > 1)) {
-										lens.materialID--;
-									}
-								}
-
-								if (materialSelection > 0) {
-									materialSelection--;
-								}
-							}
-
-							isUpdateUBO = true;
-						}
-					}
-
-					isWindowFocused = ImGui::IsWindowFocused();
-					ImGui::End();
+				if (isLoadScene) {
+					LoadScene();
+					isLoadScene = false;
 				}
 
-				ImGui::Render();
-			}
-
-			if (isLoadScene) {
-				#ifdef LAUNCHFROMSOURCE
-				std::vector<std::string> fileDir = pfd::open_file("Load Scene", "./", {"All Files", "*"}, pfd::opt::none).result();
-				#else
-				std::vector<std::string> fileDir = pfd::open_file("Load Scene", "../", {"All Files", "*"}, pfd::opt::none).result();
-				#endif
-
-				if (!fileDir.empty()) {
-					scene = ReadJSON(fileDir.at(0));
-					UpdateFromJSON();
-
-					objectSelection = 0;
-					materialSelection = 0;
-					isUpdateUBO = true;
+				if (isSaveScene) {
+					SaveScene();
+					isSaveScene = false;
 				}
 
-				isLoadScene = false;
-			}
-
-			if (isSaveScene) {
-				#ifdef LAUNCHFROMSOURCE
-				std::string fileDir = pfd::save_file("Save Scene", "./", {"All Files", "*"}, pfd::opt::force_overwrite).result();
-				#else
-				std::string fileDir = pfd::save_file("Save Scene", "../", {"All Files", "*"}, pfd::opt::force_overwrite).result();
-				#endif
-
-				if(!fileDir.empty()) {
-					UpdateToJSON();
-					SaveJSON(fileDir, scene.dump(4, (char)32, true));
+				if (frame >= samplesPerFrame) {
+					isReset |= isUpdateUBO;
 				}
-
-				isSaveScene = false;
 			}
 
-			isReset |= isUpdateUBO;
+			frame += samplesPerFrame;
+			if (isReset) {
+				currentSamples = samplesPerFrame;
+				isReset = false;
+			} else {
+				currentSamples += samplesPerFrame;
+			}
 
 			DrawFrame();
 
@@ -3522,7 +3698,7 @@ private:
 				double dtime = end - prevEnd;
 				double speed = (double)samplesPerFrame / dtime;
 				double timeElapsed = end - start;
-				double progress = (double)samples / (double)NUMSAMPLES;
+				double progress = (double)currentSamples / (double)numSamples;
 				int percentage = (int)(100.0 * progress);
 				double timeRemaining = timeElapsed * ((1.0 / progress) - 1.0);
 
@@ -3534,33 +3710,21 @@ private:
 					progressBar.push_back((char)32);
 				}
 
-				printf("Rendering: %i%%|%s| %i/%i [%0.1fs|%0.1fs, %0.3fSPP/s] \r", percentage, progressBar.data(), samples, NUMSAMPLES, timeElapsed, timeRemaining, speed);
-				if (samples >= NUMSAMPLES) {
+				printf("Rendering: %i%%|%s| %i/%i [%0.1fs|%0.1fs, %0.3fSPP/s] \r", percentage, progressBar.data(), currentSamples, numSamples, timeElapsed, timeRemaining, speed);
+				if (currentSamples >= numSamples) {
 					std::cout << std::endl;
 					printf("Rendering Completed In %0.3fs. \n", timeElapsed);
 					break;
 				}
 			}
 
-			frame += samplesPerFrame;
-			if (isReset) {
-				samples = samplesPerFrame;
-				isReset = false;
-			} else {
-				samples += samplesPerFrame;
-			}
-
 			if (!OFFSCREENRENDER) {
 				frameTime = io->DeltaTime;
-				if (frames.size() > 100) {
-					for (size_t i = 1; i < frames.size(); i++) {
-						frames[i - 1] = frames[i];
-					}
-					frames[frames.size() - 1] = 1000.0f * frameTime;
+
+				if (framesGraph.size() >= 100) {
+					framesGraph.erase(framesGraph.begin());
 				}
-				else {
-					frames.push_back(1000.0f * frameTime);
-				}
+				framesGraph.push_back(1000.0f * frameTime);
 			}
         }
 

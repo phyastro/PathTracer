@@ -5,7 +5,7 @@ layout(set = 0, binding = 1, rgba32f) uniform readonly imageBuffer texelBuffer;
 layout(push_constant) uniform PushConstants {
     ivec2 resolution;
 	int frame;
-    int samples;
+    int currentSamples;
     int samplesPerFrame;
     float FPS;
     float persistence;
