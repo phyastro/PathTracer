@@ -27,11 +27,25 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) out vec4 processorColor;
 
+// http://www.cvrl.org/people/Stockman/pubs/2019%20Cone%20fundamentals%20CIE%20S.pdf
+vec3 LMSToXYZ(vec3 LMS) {
+	// Conversion From LMS Cone Response To Illuminant E XYZ
+	mat3 m = mat3(1.94735469, -1.41445123, 0.36476327, 0.68990272, 0.34832189, 0.00000000, 0.00000000, 0.00000000, 1.93485343);
+	return LMS * m;
+}
+
 // http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
 vec3 XYZToRGB(vec3 XYZ){
 	// Conversion From Illuminant E XYZ To CIE RGB Color Space
 	mat3 m = mat3(2.3706743, -0.9000405, -0.4706338, -0.5138850, 1.4253036, 0.0885814, 0.0052982, -0.0146949, 1.0093968);
 	return XYZ * m;
+}
+
+vec3 LMSToRGB(vec3 LMS) {
+	// Conversion From LMS Cone Response To CIE RGB Color Space
+	// XYZToRGB(LMSToXYZ(LMS))
+	mat3 m = mat3(3.99560, -3.66670, -0.04587, -0.01739, 1.22332, -0.01605, 0.00017, -0.01261, 1.95496);
+	return LMS * m;
 }
 
 vec3 Gamma(in vec3 x, in float y) {
@@ -63,7 +77,7 @@ vec3 DEUCESBioPhotometric(in vec3 x) {
 }
 
 vec3 Processing(in vec3 inColor) {
-	vec3 outColor = max(XYZToRGB(inColor), 0.0);
+	vec3 outColor = max(LMSToRGB(inColor), 0.0);
 	if (tonemap == 1)
 		outColor = Reinhard(outColor);
 	if (tonemap == 2)

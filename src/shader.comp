@@ -17,7 +17,7 @@ layout(set = 0, binding = 0, std430) uniform ubo {
 	float numObjects[4];
 	float objects[MAX_OBJECTS_SIZE];
 	float materials[MAX_MATERIALS_SIZE];
-	float CIEXYZ2006[1323];
+	float CIELMS2006[1323];
 };
 
 layout(set = 0, binding = 1, rgba32f) uniform imageBuffer texelBuffer;
@@ -94,14 +94,14 @@ struct material {
 
 vec3 cameraPos = vec3(cameraPosX, cameraPosY, cameraPosZ);
 
-vec3 WaveToXYZ(in float wave) {
+vec3 WaveToLMS(in float wave) {
 	// Conversion From Wavelength To XYZ Using CIEXYZ2006 Table
 	vec3 XYZ = vec3(0.0);
 	if ((wave >= 390.0) && (wave <= 830.0)){
 		// Finding The Appropriate Index Of The Table For Given Wavelength
 		int index3 = 3 * int(floor(wave) - 390.0);
-		vec3 t1 = vec3(CIEXYZ2006[index3], CIEXYZ2006[index3+1], CIEXYZ2006[index3+2]);
-		vec3 t2 = vec3(CIEXYZ2006[index3+3], CIEXYZ2006[index3+4], CIEXYZ2006[index3+5]);
+		vec3 t1 = vec3(CIELMS2006[index3], CIELMS2006[index3+1], CIELMS2006[index3+2]);
+		vec3 t2 = vec3(CIELMS2006[index3+3], CIELMS2006[index3+4], CIELMS2006[index3+5]);
 		XYZ = mix(t1, t2, wave - floor(wave));
 	}
 	return XYZ;
@@ -845,7 +845,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
 	vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
 	// Ray Passes Through The Lens Here
 	TracePathLens(l, ray, forwardDir);
-	color += TracePath(l, ray, seed) * WaveToXYZ(l) * InverseSpectraPDF(390.0, 720.0);
+	color += TracePath(l, ray, seed) * WaveToLMS(l) * InverseSpectraPDF(390.0, 720.0);
 	//float hitdist = MAXDIST;
 	//SphereTracing(ray, hitdist);
 	//color += hitdist;
