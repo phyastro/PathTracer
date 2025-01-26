@@ -1,0 +1,197 @@
+{
+    "camera": {
+        "position": [
+            3.74948,
+            2.9674,
+            -3.77374
+        ],
+        "angle": [
+            208.49922,
+            -23.01198
+        ],
+        "ISO": 1600,
+        "size": 0.057,
+        "apertureSize": 0.0025,
+        "apertureDistance": 0.049,
+        "lensRadius": 0.01,
+        "lensFocalLength": 0.03,
+        "lensThickness": 0.0,
+        "lensDistance": 0.05
+    },
+    "sphere": [
+        {
+            "position": [
+                0.0,
+                4.0,
+                -3.0
+            ],
+            "radius": 1.0,
+            "materialID": 3
+        }
+    ],
+    "plane": [
+        {
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "materialID": 1
+        }
+    ],
+    "box": [
+        {
+            "position": [
+                3.69,
+                2.38,
+                -9.04
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "size": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "materialID": 6
+        }
+    ],
+    "lens": [
+        {
+            "position": [
+                3.81,
+                3.89,
+                -7.26
+            ],
+            "rotation": [
+                0.8,
+                0.0,
+                -36.7
+            ],
+            "radius": 1.2,
+            "focalLength": 1.0,
+            "thickness": 0.0,
+            "isConverging": true,
+            "materialID": 5
+        }
+    ],
+    "sdf": [
+        {
+            "position": [
+                2.0,
+                1.0,
+                -7.0
+            ],
+            "boundingSize": [
+                3.0,
+                4.0,
+                3.0
+            ],
+            "glsl": "float sdf(in vec3 p)\r\n{\r\n    float s1 = length(p) - 1.0;\r\n    float s2 = length(vec3(p.x, p.y - 1.0, p.z)) - 0.7;\r\n    float s3 = length(vec3(p.x - 0.25, p.y - 1.25, p.z - 0.5)) - 0.25;\r\n    float s4 = length(vec3(p.x + 0.25, p.y - 1.25, p.z - 0.5)) - 0.25;\r\n    return smin(smin(smin(s1, s2), s3), s4);\r\n}\r\n\r\nfloat sdfmaterial(in vec3 p)\r\n{\r\n    vec2 s1 = vec2(length(p) - 1.0, 6.0);\r\n    vec2 s2 = vec2(length(vec3(p.x, p.y - 1.0, p.z)) - 0.7, 7.0);\r\n    vec2 s3 = vec2(length(vec3(p.x - 0.25, p.y - 1.25, p.z - 0.5)) - 0.25, 8.0);\r\n    vec2 s4 = vec2(length(vec3(p.x + 0.25, p.y - 1.25, p.z - 0.5)) - 0.25, 8.0);\r\n    return smin(smin(smin(s1, s2), s3), s4).y;\r\n}\r\n"
+        }
+    ],
+    "material": [
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 100.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 470.0,
+                "sigma": 6.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 0.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 8.7
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 650.0,
+                "sigma": 5.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 100.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 2180.0,
+                "luminosity": 9.1
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 100.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 8475.0,
+                "luminosity": 4.8
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 570.0,
+                "sigma": 5.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 5.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 3.0,
+                "isInvert": false
+            },
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 0.0
+            }
+        }
+    ]
+}

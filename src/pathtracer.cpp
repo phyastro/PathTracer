@@ -34,14 +34,21 @@ const bool OFFSCREENRENDER = false;
 const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 
 #define DEBUGMODE
-//#define LAUNCHFROMSOURCE
+//#define LAUNCHFROMEXECUTABLES
 #define MAX_OBJECTS_SIZE 1024
-#define MAX_MATERIALS_SIZE 1024
+#define MAX_SDFS_SIZE 768
+#define MAX_MATERIALS_SIZE 975
 
 #ifdef DEBUGMODE
 const bool isValidationLayersEnabled = true;
 #else
 const bool isValidationLayersEnabled = false;
+#endif
+
+#ifdef LAUNCHFROMEXECUTABLES
+const bool isRunFromExecutables = true;
+#else
+const bool isRunFromExecutables = false;
 #endif
 
 struct QueueFamilyIndices {
@@ -142,6 +149,12 @@ struct material {
 	float emission[2];
 };
 
+struct sdf {
+	float pos[3];
+	float size[3];
+	std::string glsl;
+};
+
 struct Camera {
 	glm::vec3 pos;
 	glm::vec2 angle;
@@ -156,8 +169,9 @@ struct Camera {
 };
 
 struct UniformBufferObject {
-	float numObjects[5];
+	float numObjects[6];
 	float packedObjects[MAX_OBJECTS_SIZE];
+	float packedSdfs[MAX_SDFS_SIZE];
 	float packedMaterials[MAX_MATERIALS_SIZE];
 	float CIELMS2006[1323];
 };
@@ -809,6 +823,10 @@ const float CIELMS2006[1323] = {
     0.000000875134f, 0.000000088370f, 0.000000000000f
 };
 
+std::string vertexShaderCode{};
+std::string fragmentShaderCode{};
+std::string computeShaderCode{};
+
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
 const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
 const VkAllocationCallbacks *pAllocator,
@@ -854,20 +872,6 @@ std::string ReadFile(const std::string& fileDir) {
 	return buffer;
 }
 
-#ifdef LAUNCHFROMSOURCE
-const std::string vertexShaderCode = ReadFile("./src/shader.vert");
-
-const std::string fragmentShaderCode = ReadFile("./src/shader.frag");
-
-const std::string computeShaderCode = ReadFile("./src/shader.comp");
-#else
-const std::string vertexShaderCode = ReadFile("../src/shader.vert");
-
-const std::string fragmentShaderCode = ReadFile("../src/shader.frag");
-
-const std::string computeShaderCode = ReadFile("../src/shader.comp");
-#endif
-
 nlohmann::ordered_json ReadJSON(const std::string& fileDir) {
 	std::ifstream file(fileDir);
 
@@ -885,10 +889,10 @@ nlohmann::ordered_json ReadJSON(const std::string& fileDir) {
 	return json;
 }
 
-void SaveJSON(const std::string& fileDir, const std::string& json) {
-	std::ofstream file(fileDir);
+void SaveFile(const std::string& fileDir, const std::string& File) {
+	std::ofstream file(fileDir, std::ios::binary);
 
-	file << json;
+	file << File;
 
 	file.close();
 }
@@ -1078,8 +1082,10 @@ private:
 
 	bool isWindowMinimized = false;
 	bool isVSyncChanged = false;
+	bool isCameraLocked = false;
 	bool isReset = false;
 	bool isUpdateUBO = true;
+	bool isRecompile = false;
 
 	uint32_t currentFrame = 0;
 	int samplesPerFrame = 1;
@@ -1095,6 +1101,8 @@ private:
 	nlohmann::ordered_json scene;
 	bool isLoadScene = false;
 	bool isSaveScene = false;
+	bool isLoadSDF = false;
+	bool isSaveSDF = false;
 
 	Camera camera{};
 	std::vector<sphere> spheres;
@@ -1103,10 +1111,12 @@ private:
 	std::vector<lens> lenses;
 	std::vector<cyclide> cyclides;
 	std::vector<material> materials;
+	std::vector<sdf> sdfs;
 
 	bool isImGuiWindowFocused = false;
 	int objectSelection = 0;
 	int materialSelection = 0;
+	int sdfSelection = 0;
 
     void InitWindow() {
 		glfwInit();
@@ -1187,7 +1197,7 @@ private:
 
 		std::cout << "Required Instance Extensions:" << std::endl;
 		for(const char* extension : extensions) {
-			std::cout << "\t" << extension << std::endl;
+			//std::cout << "\t" << extension << std::endl;
 		}
 
 		return extensions;
@@ -1321,12 +1331,12 @@ private:
 
 		std::cout << "Available Device Extensions:" << std::endl;
 		for (const VkExtensionProperties& availableExtension : availableExtensions) {
-			std::cout << "\t" << availableExtension.extensionName << std::endl;
+			//std::cout << "\t" << availableExtension.extensionName << std::endl;
 		}
 
 		std::cout << "Required Device Extensions:" << std::endl;
 		for (const char* deviceExtension : deviceExtensions) {
-			std::cout << "\t" << deviceExtension << std::endl;
+			//std::cout << "\t" << deviceExtension << std::endl;
 		}
 
 		std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
@@ -1452,7 +1462,7 @@ private:
 				if (availableFormat.colorSpace == colorSpace.space) {
 					for (const colorFormatName& colorFormat : colorFormats) {
 						if (availableFormat.format == colorFormat.format) {
-							std::cout << "\t" << colorFormat.name << ", " << colorSpace.name << std::endl;
+							//std::cout << "\t" << colorFormat.name << ", " << colorSpace.name << std::endl;
 						}
 					}
 				}
@@ -1481,7 +1491,7 @@ private:
 		for (const VkPresentModeKHR& availablePresentMode : availablePresentModes) {
 			for (const presentModeName& presentMode : presentModes) {
 				if (availablePresentMode == presentMode.mode) {
-					std::cout << "\t" << presentMode.name << std::endl;
+					//std::cout << "\t" << presentMode.name << std::endl;
 					availablePresentModesNames.push_back(presentMode);
 					break;
 				}
@@ -1825,6 +1835,15 @@ private:
 	}
 
 	void CreateGraphicsPipeline() {
+		vertexShaderCode = ReadFile("../src/shader.vert");
+		if (isRunFromExecutables) {
+		vertexShaderCode = ReadFile("./src/shader.vert");
+		}
+		fragmentShaderCode = ReadFile("../src/shader.frag");
+		if (isRunFromExecutables) {
+		fragmentShaderCode = ReadFile("./src/shader.frag");
+		}
+
 		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 
 		shaderStages[0] = CreateShaderStageInfo(CreateShaderModule(GLSLToSPIRV(vertexShaderCode, EShLangVertex)), VK_SHADER_STAGE_VERTEX_BIT, "main");
@@ -1922,7 +1941,67 @@ private:
 		}
 	}
 
+	void InsertSDF() {
+		for (int i = (sdfs.size() - 1); i >= 0; i--) {
+			std::string sdf = sdfs[i].glsl;
+			std::string SDFName = "SDF";
+			std::string SDFFunction = "\n    if ((set";
+			std::string SDFMATERIALFunction;
+			std::string SDFPos;
+			std::string SDFNum = std::to_string(i + 1);
+			std::string SDFCode = std::to_string(int(pow(2, i % 32)));
+
+			SDFName.append(SDFNum);
+			sdf.replace(sdf.find("sdf"), 3, SDFName);
+			SDFName.append("MATERIAL");
+			sdf.replace(sdf.find("sdfmaterial"), 11, SDFName);
+			sdf.append("\n");
+
+			SDFPos.append("(p - vec3(sdfs[");
+			SDFPos.append(std::to_string(6 * i));
+			SDFPos.append("], sdfs[");
+			SDFPos.append(std::to_string(6 * i + 1));
+			SDFPos.append("], sdfs[");
+			SDFPos.append(std::to_string(6 * i + 2));
+			SDFPos.append("]))");
+
+			SDFFunction.append(std::to_string(((i - (i % 32)) / 32) + 1));
+			SDFFunction.append(" & ");
+			SDFFunction.append(SDFCode);
+			SDFFunction.append(") == ");
+			SDFFunction.append(SDFCode);
+			SDFFunction.append(") sdf");
+			SDFMATERIALFunction = SDFFunction;
+			SDFFunction.append(" = min(sdf, SDF");
+			SDFFunction.append(SDFNum);
+			SDFFunction.append(SDFPos);
+			SDFFunction.append(");");
+
+			SDFMATERIALFunction.append("material = minMaterial(sdf, SDF");
+			SDFMATERIALFunction.append(SDFNum);
+			SDFMATERIALFunction.append(SDFPos);
+			SDFMATERIALFunction.append(", sdfmaterial, SDF");
+			SDFMATERIALFunction.append(SDFNum);
+			SDFMATERIALFunction.append("MATERIAL");
+			SDFMATERIALFunction.append(SDFPos);
+			SDFMATERIALFunction.append(");");
+
+			computeShaderCode.insert(computeShaderCode.find("// Put SDF Functions Here") + 26, SDFFunction);
+			computeShaderCode.insert(computeShaderCode.find("// Put SDFMATERIAL Functions Here") + 34, SDFFunction);
+			computeShaderCode.insert(computeShaderCode.find("// Put SDFMATERIAL Functions Here") + 34, SDFMATERIALFunction);
+			computeShaderCode.insert(computeShaderCode.find("// All SDF Are Inserted Here") + 31, sdf);
+		}
+	}
+
 	void CreateComputePipeline() {
+		computeShaderCode = ReadFile("../src/shader.comp");
+		if (isRunFromExecutables) {
+		computeShaderCode = ReadFile("./src/shader.comp");
+		}
+
+		InsertSDF();
+		std::cout << computeShaderCode << std::endl;
+
 		VkPipelineShaderStageCreateInfo computeShaderStage{};
 		computeShaderStage = CreateShaderStageInfo(CreateShaderModule(GLSLToSPIRV(computeShaderCode, EShLangCompute)), VK_SHADER_STAGE_COMPUTE_BIT, "main");
 
@@ -2529,178 +2608,7 @@ private:
 	}
 
 	void DefaultScene() {
-		scene = nlohmann::ordered_json::parse(R"(
-			{
-				"camera": {
-					"position": [
-						6.332,
-						3.855,
-						3.14
-					],
-					"angle": [
-						225.093,
-						-31.512
-					],
-					"ISO": 1600,
-					"size": 0.057,
-					"apertureSize": 0.0025,
-					"apertureDistance": 0.049,
-					"lensRadius": 0.01,
-					"lensFocalLength": 0.03,
-					"lensThickness": 0.0,
-					"lensDistance": 0.05
-				},
-				"sphere": [
-					{
-						"position": [
-							0.0,
-							1.0,
-							0.0
-						],
-						"radius": 1.0,
-						"materialID": 1
-					},
-					{
-						"position": [
-							5.0,
-							1.0,
-							-1.0
-						],
-						"radius": 1.0,
-						"materialID": 2
-					},
-					{
-						"position": [
-							0.0,
-							4.0,
-							-3.0
-						],
-						"radius": 1.0,
-						"materialID": 3
-					}
-				],
-				"plane": [
-					{
-						"position": [
-							0.0,
-							0.0,
-							0.0
-						],
-						"materialID": 1
-					}
-				],
-				"box": [
-					{
-						"position": [
-							3.0,
-							0.75,
-							1.0
-						],
-						"rotation": [
-							0.0,
-							58.31,
-							0.0
-						],
-						"size": [
-							1.5,
-							1.5,
-							1.5
-						],
-						"materialID": 1
-					}
-				],
-				"lens": [
-					{
-						"position": [
-							5.0,
-							1.2,
-							-4.0
-						],
-						"rotation": [
-							0.0,
-							0.0,
-							0.0
-						],
-						"radius": 1.2,
-						"focalLength": 1.0,
-						"thickness": 0.0,
-						"isConverging": true,
-						"materialID": 1
-					}
-				],
-				"cyclide": [
-					{
-						"position": [
-							-2.0,
-							1.05,
-							-3.0
-						],
-						"rotation": [
-							0.0,
-							0.0,
-							0.0
-						],
-						"scale": [
-							0.25,
-							0.25,
-							0.25
-						],
-						"a": 3.36,
-						"b": -3.17,
-						"c": -1.06,
-						"d": -1.50,
-						"boundingRadius": 6.0,
-						"materialID": 4
-					}
-				],
-				"material": [
-					{
-						"reflection": {
-							"peakWavelength": 550.0,
-							"sigma": 100.0,
-							"isInvert": false
-						},
-						"emission": {
-							"temperature": 5500.0,
-							"luminosity": 0.0
-						}
-					},
-					{
-						"reflection": {
-							"peakWavelength": 470.0,
-							"sigma": 6.0,
-							"isInvert": false
-						},
-						"emission": {
-							"temperature": 5500.0,
-							"luminosity": 0.0
-						}
-					},
-					{
-						"reflection": {
-							"peakWavelength": 550.0,
-							"sigma": 0.0,
-							"isInvert": false
-						},
-						"emission": {
-							"temperature": 5500.0,
-							"luminosity": 12.5
-						}
-					},
-					{
-						"reflection": {
-							"peakWavelength": 650.0,
-							"sigma": 5.0,
-							"isInvert": false
-						},
-						"emission": {
-							"temperature": 5500.0,
-							"luminosity": 0.0
-						}
-					}
-				]
-			}
-		)");
+		scene = nlohmann::ordered_json::parse(ReadFile("../scenes/scene0.json"));
 	}
 
 	void UpdateFromJSON() {
@@ -2807,6 +2715,19 @@ private:
 			cyclides[i].brad = scene["cyclide"][i]["boundingRadius"];
 
 			cyclides[i].materialID = scene["cyclide"][i]["materialID"];
+		}
+
+		sdfs.resize(scene["sdf"].size());
+		for (size_t i = 0; i < sdfs.size(); i++) {
+			sdfs[i].pos[0] = scene["sdf"][i]["position"][0];
+			sdfs[i].pos[1] = scene["sdf"][i]["position"][1];
+			sdfs[i].pos[2] = scene["sdf"][i]["position"][2];
+
+			sdfs[i].size[0] = scene["sdf"][i]["boundingSize"][0];
+			sdfs[i].size[1] = scene["sdf"][i]["boundingSize"][1];
+			sdfs[i].size[2] = scene["sdf"][i]["boundingSize"][2];
+
+			sdfs[i].glsl = scene["sdf"][i]["glsl"];
 		}
 
 		materials.resize(scene["material"].size());
@@ -2923,6 +2844,18 @@ private:
 			scene["cyclide"][i]["materialID"] = cyclides[i].materialID;
 		}
 
+		for (size_t i = 0; i < sdfs.size(); i++) {
+			scene["sdf"][i]["position"][0] = RoundDecimal((double)sdfs[i].pos[0], 1e5);
+			scene["sdf"][i]["position"][1] = RoundDecimal((double)sdfs[i].pos[1], 1e5);
+			scene["sdf"][i]["position"][2] = RoundDecimal((double)sdfs[i].pos[2], 1e5);
+
+			scene["sdf"][i]["boundingSize"][0] = RoundDecimal((double)sdfs[i].size[0], 1e5);
+			scene["sdf"][i]["boundingSize"][1] = RoundDecimal((double)sdfs[i].size[1], 1e5);
+			scene["sdf"][i]["boundingSize"][2] = RoundDecimal((double)sdfs[i].size[2], 1e5);
+
+			scene["sdf"][i]["glsl"] = sdfs[i].glsl;
+		}
+
 		for (size_t i = 0; i < materials.size(); i++) {
 			scene["material"][i]["reflection"]["peakWavelength"] = RoundDecimal((double)materials[i].reflection[0], 1e5);
 			scene["material"][i]["reflection"]["sigma"] = RoundDecimal((double)materials[i].reflection[1], 1e5);
@@ -2936,36 +2869,38 @@ private:
 	void HandleEvents(glm::vec2& cursorPos, glm::vec2& cameraAngle, glm::vec3& deltaCamPos) {
 		glfwPollEvents();
 
-		glm::vec2 cursorPos1 = glm::vec2((float)(ImGui::GetMousePos().x) / (float)W, (float)(H - ImGui::GetMousePos().y) / (float)H);
+		if (!isCameraLocked) {
+			glm::vec2 cursorPos1 = glm::vec2((float)(ImGui::GetMousePos().x) / (float)W, (float)(H - ImGui::GetMousePos().y) / (float)H);
 
-		if (!isImGuiWindowFocused) {
-			if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-				isReset = true;
-				glm::vec2 dxdy = cursorPos1 - cursorPos;
-				cameraAngle = cameraAngle - (360.0f * dxdy);
-				if (cameraAngle.x > 360.0f) {
-					cameraAngle.x = cameraAngle.x - 360.0f;
-				}
-				if (cameraAngle.x < 0.0f) {
-					cameraAngle.x = 360.0f + cameraAngle.x;
-				}
-				if (cameraAngle.y > 90.0f) {
-					cameraAngle.y = 90.0f;
-				}
-				if (cameraAngle.y < -90.0f) {
-					cameraAngle.y = -90.0f;
+			if (!isImGuiWindowFocused) {
+				if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+					isReset = true;
+					glm::vec2 dxdy = cursorPos1 - cursorPos;
+					cameraAngle = cameraAngle - (360.0f * dxdy);
+					if (cameraAngle.x > 360.0f) {
+						cameraAngle.x = cameraAngle.x - 360.0f;
+					}
+					if (cameraAngle.x < 0.0f) {
+						cameraAngle.x = 360.0f + cameraAngle.x;
+					}
+					if (cameraAngle.y > 90.0f) {
+						cameraAngle.y = 90.0f;
+					}
+					if (cameraAngle.y < -90.0f) {
+						cameraAngle.y = -90.0f;
+					}
 				}
 			}
-		}
 
-		cursorPos = cursorPos1;
+			cursorPos = cursorPos1;
 
-		deltaCamPos.x = ((float)(ImGui::IsKeyDown(ImGuiKey_D)) - (float)(ImGui::IsKeyDown(ImGuiKey_A)));
-		deltaCamPos.y = ((float)(ImGui::IsKeyDown(ImGuiKey_E)) - (float)(ImGui::IsKeyDown(ImGuiKey_Q)));
-		deltaCamPos.z = ((float)(ImGui::IsKeyDown(ImGuiKey_W)) - (float)(ImGui::IsKeyDown(ImGuiKey_S)));
+			deltaCamPos.x = ((float)(ImGui::IsKeyDown(ImGuiKey_D)) - (float)(ImGui::IsKeyDown(ImGuiKey_A)));
+			deltaCamPos.y = ((float)(ImGui::IsKeyDown(ImGuiKey_E)) - (float)(ImGui::IsKeyDown(ImGuiKey_Q)));
+			deltaCamPos.z = ((float)(ImGui::IsKeyDown(ImGuiKey_W)) - (float)(ImGui::IsKeyDown(ImGuiKey_S)));
 
-		if ((deltaCamPos.x != 0.0f) || (deltaCamPos.y != 0.0f) || (deltaCamPos.z != 0.0f)) {
-			isReset = true;
+			if ((deltaCamPos.x != 0.0f) || (deltaCamPos.y != 0.0f) || (deltaCamPos.z != 0.0f)) {
+				isReset = true;
+			}
 		}
     }
 
@@ -3010,6 +2945,16 @@ private:
 		static lens newLens = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
 		static cyclide newCyclide = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 3.36, -3.17, -1.06, -1.50, 1 };
 		static material newMaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+		static sdf newSDF = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, R"(
+float sdf(in vec3 p){
+	return length(p) - 1.0;
+}
+
+float sdfmaterial(in vec3 p)
+{
+    return 0.0;
+})"
+		};
 
 		static std::vector<float> spectrumGraph{};
 		static std::vector<float> tonemapGraph{};
@@ -3030,10 +2975,12 @@ private:
 			ImGui::Text("Camera Angle: (%0.3f, %0.3f)", camera.angle.x, camera.angle.y);
 			ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", camera.pos.x, camera.pos.y, camera.pos.z);
 			isVSyncChanged = ImGui::Checkbox("VSync", &VSync);
+			ImGui::Checkbox("Lock Camera", &isCameraLocked);
 			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f, 1, 100000);
 			isLoadScene |= ImGui::Button("Load Scene", ImVec2(303, 0));
 			isSaveScene |= ImGui::Button("Save Scene", ImVec2(303, 0));
+			isRecompile |= ImGui::Button("Recompile", ImVec2(303, 0));
 			ImGui::Separator();
 
 			if (ImGui::CollapsingHeader("Post Processing")) {
@@ -3087,7 +3034,7 @@ private:
 				if (IsInRange(id, 0, numSpheres - 1)) {
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Sphere %i", id + 1);
 					isUpdateUBO |= ImGui::DragFloat3("Position", spheres[id].pos, 0.01f);
-					isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[id].radius, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[id].radius, 0.01f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[id].materialID, 0.02f, 1, numMaterials);
 				}
 
@@ -3103,7 +3050,7 @@ private:
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Box %i", id + 1);
 					isUpdateUBO |= ImGui::DragFloat3("Position", boxes[id].pos, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[id].rotation, 0.1f);
-					isUpdateUBO |= ImGui::DragFloat3("Size", boxes[id].size, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat3("Size", boxes[id].size, 0.01f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[id].materialID, 0.02f, 1, numMaterials);
 				}
 
@@ -3112,9 +3059,9 @@ private:
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Lens %i", id + 1);
 					isUpdateUBO |= ImGui::DragFloat3("Position", lenses[id].pos, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat3("Rotation", lenses[id].rotation, 0.1f);
-					isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[id].radius, 0.001f);
-					isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[id].focalLength, 0.001f);
-					isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[id].thickness, 0.001f);
+					isUpdateUBO |= ImGui::DragFloat("Radius", &lenses[id].radius, 0.001f, 0.0f, 1e7f);
+					isUpdateUBO |= ImGui::DragFloat("Focal Length", &lenses[id].focalLength, 0.001f, 0.0f, 1e7f);
+					isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[id].thickness, 0.001f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[id].isConverging);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[id].materialID, 0.02f, 1, numMaterials);
 				}
@@ -3124,12 +3071,12 @@ private:
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Cyclide %i", id + 1);
 					isUpdateUBO |= ImGui::DragFloat3("Position", cyclides[id].pos, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat3("Rotation", cyclides[id].rotation, 0.1f);
-					isUpdateUBO |= ImGui::DragFloat3("Scale", cyclides[id].scale, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat3("Scale", cyclides[id].scale, 0.01f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::DragFloat("a", &cyclides[id].a, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat("b", &cyclides[id].b, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat("c", &cyclides[id].c, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat("d", &cyclides[id].d, 0.01f);
-					isUpdateUBO |= ImGui::DragFloat("Bounding Radius", &cyclides[id].brad, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat("Bounding Radius", &cyclides[id].brad, 0.01f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &cyclides[id].materialID, 0.02f, 1, numMaterials);
 				}
 
@@ -3149,42 +3096,42 @@ private:
 				}
 				ImGui::Separator();
 
-				if (ImGui::Button("Add New Sphere")) {
+				if (ImGui::Button("Add New Sphere", ImVec2(303, 0))) {
 					spheres.push_back(newSphere);
 
 					objectSelection = numSpheres;
 					isUpdateUBO = true;
 				}
 
-				if (ImGui::Button("Add New Plane")) {
+				if (ImGui::Button("Add New Plane", ImVec2(303, 0))) {
 					planes.push_back(newPlane);
 
 					objectSelection = numSpheres + numPlanes;
 					isUpdateUBO = true;
 				}
 
-				if (ImGui::Button("Add New Box")) {
+				if (ImGui::Button("Add New Box", ImVec2(303, 0))) {
 					boxes.push_back(newBox);
 
 					objectSelection = numSpheres + numPlanes + numBoxes;
 					isUpdateUBO = true;
 				}
 
-				if (ImGui::Button("Add New Lens")) {
+				if (ImGui::Button("Add New Lens", ImVec2(303, 0))) {
 					lenses.push_back(newLens);
 
 					objectSelection = numSpheres + numPlanes + numBoxes + numLenses;
 					isUpdateUBO = true;
 				}
 
-				if (ImGui::Button("Add New Cyclide")) {
+				if (ImGui::Button("Add New Cyclide", ImVec2(303, 0))) {
 					cyclides.push_back(newCyclide);
 
 					objectSelection = numSpheres + numPlanes + numBoxes + numLenses + numCyclides;
 					isUpdateUBO = true;
 				}
 
-				if (ImGui::Button("Delete Object")) {
+				if (ImGui::Button("Delete Object", ImVec2(303, 0))) {
 					id = objectSelection;
 					if (IsInRange(id, 0, numSpheres - 1)) {
 						spheres.erase(std::next(spheres.begin(), id));
@@ -3226,6 +3173,51 @@ private:
 					}
 
 					isUpdateUBO = true;
+				}
+			}
+			ImGui::Separator();
+
+			if (ImGui::CollapsingHeader("SDFs")) {
+				int numSDFs = (int)sdfs.size();
+
+				int id = sdfSelection;
+				if (IsInRange(id, 0, numSDFs - 1)) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "SDF %i", id + 1);
+					isUpdateUBO |= ImGui::DragFloat3("Position", sdfs[id].pos, 0.01f);
+					isUpdateUBO |= ImGui::DragFloat3("Bounding Box Size", sdfs[id].size, 0.01f, 0.0f, 1e7f);
+					isLoadSDF |= ImGui::Button("Change SDF", ImVec2(303, 0));
+					isSaveSDF |= ImGui::Button("Save SDF", ImVec2(303, 0));
+				}
+
+				ImGui::Separator();
+
+				if (ImGui::BeginTable("SDFs Table", 1)) {
+					ImGui::TableSetupColumn("SDF");
+					ImGui::TableHeadersRow();
+					ItemsTable("SDF ", sdfSelection, 0, numSDFs, true);
+					ImGui::EndTable();
+				}
+				ImGui::Separator();
+
+				if (ImGui::Button("Add New SDF", ImVec2(303, 0))) {
+					sdfs.push_back(newSDF);
+
+					sdfSelection = numSDFs;
+					isUpdateUBO = true;
+					isRecompile = true;
+				}
+
+				if (ImGui::Button("Delete SDF", ImVec2(303, 0))) {
+					id = sdfSelection;
+					if (IsInRange(id, 0, numSDFs - 1)) {
+						sdfs.erase(std::next(sdfs.begin(), id));
+						if (sdfSelection > 0) {
+							sdfSelection--;
+						}
+					}
+
+					isUpdateUBO = true;
+					isRecompile = true;
 				}
 			}
 			ImGui::Separator();
@@ -3363,6 +3355,7 @@ private:
 			objectSelection = 0;
 			materialSelection = 0;
 			isUpdateUBO = true;
+			isRecompile = true;
 
 			vkDeviceWaitIdle(device);
 
@@ -3378,9 +3371,26 @@ private:
 	void SaveScene() {
 		std::string sceneDir = pfd::save_file("Save Scene", "", {"All Files", "*"}, pfd::opt::force_overwrite).result();
 
-		if(!sceneDir.empty()) {
+		if (!sceneDir.empty()) {
 			UpdateToJSON();
-			SaveJSON(sceneDir, scene.dump(4, (char)32, true));
+			SaveFile(sceneDir, scene.dump(4, (char)32, true));
+		}
+	}
+
+	void LoadSDF() {
+		std::vector<std::string> SDFDir = pfd::open_file("Load SDF", "", {"All Files", "*"}, pfd::opt::none).result();
+		if (!SDFDir.empty()) {
+			sdfs[sdfSelection].glsl = ReadFile(SDFDir.at(0));
+			isRecompile = true;
+		}
+	}
+
+	void SaveSDF() {
+		std::string SDFDir = pfd::save_file("Save SDF", "", {"All Files", "*"}, pfd::opt::force_overwrite).result();
+
+		if (!SDFDir.empty()) {
+			std::cout << sdfs[sdfSelection].glsl << std::endl;
+			SaveFile(SDFDir, sdfs[sdfSelection].glsl);
 		}
 	}
 
@@ -3579,8 +3589,9 @@ private:
 
 	void UpdateUniformBuffer() {
 		if (isUpdateUBO) {
-			std::array<float, 5> numObjects;
+			std::array<float, 6> numObjects;
 			std::vector<float> objectsArray;
+			std::vector<float> sdfsArray;
 			std::vector<float> materialsArray;
 
 			numObjects[0] = (float)spheres.size();
@@ -3588,6 +3599,7 @@ private:
 			numObjects[2] = (float)boxes.size();
 			numObjects[3] = (float)lenses.size();
 			numObjects[4] = (float)cyclides.size();
+			numObjects[5] = (float)sdfs.size();
 
 			for (size_t i = 0; i < numObjects.size(); i++) {
 				ubo.numObjects[i] = numObjects[i];
@@ -3663,6 +3675,23 @@ private:
 				}
 			}
 
+			for (int i = 0; i < sdfs.size(); i++) {
+				sdfsArray.push_back(sdfs[i].pos[0]);
+				sdfsArray.push_back(sdfs[i].pos[1]);
+				sdfsArray.push_back(sdfs[i].pos[2]);
+				sdfsArray.push_back(sdfs[i].size[0]);
+				sdfsArray.push_back(sdfs[i].size[1]);
+				sdfsArray.push_back(sdfs[i].size[2]);
+			}
+
+			for (int i = 0; i < MAX_SDFS_SIZE; i++) {
+				if (sdfsArray.size() > i) {
+					ubo.packedSdfs[i] = sdfsArray[i];
+				} else {
+					ubo.packedSdfs[i] = 0.0f;
+				}
+			}
+
 			for (int i = 0; i < materials.size(); i++) {
 				materialsArray.push_back(materials[i].reflection[0]);
 				materialsArray.push_back(materials[i].reflection[1]);
@@ -3710,17 +3739,33 @@ private:
 		pushConstant.tonemap = tonemap;
 	}
 
+	void RecompileComputeShaders() {
+		vkDestroyPipeline(device, computePipeline, nullptr);
+		vkDestroyPipelineLayout(device, computePipelineLayout, nullptr);
+
+		CreateComputePipeline();
+	}
+
 	void DrawFrame() {
 		bool isGraphicsRender = (!OFFSCREENRENDER) || (OFFSCREENRENDER && (currentSamples >= numSamples));
 
-		vkWaitForFences(device, 1, &computeInFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		if (isRecompile) {
+			for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+				vkWaitForFences(device, 1, &computeInFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+				currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+			}
+			RecompileComputeShaders();
+			isRecompile = false;
+		} else {
+			vkWaitForFences(device, 1, &computeInFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		}
 
 		UpdateUniformBuffer();
 		UpdatePushConstant();
 
 		vkResetFences(device, 1, &computeInFlightFences[currentFrame]);
-
 		vkResetCommandBuffer(computeCommandBuffers[currentFrame], 0);
+
 		RecordComputeCommandBuffer(computeCommandBuffers[currentFrame]);
 
 		VkSubmitInfo computeSubmitInfo{};
@@ -3884,8 +3929,19 @@ private:
 					isSaveScene = false;
 				}
 
+				if (isLoadSDF) {
+					LoadSDF();
+					isLoadSDF = false;
+				}
+
+				if (isSaveSDF) {
+					SaveSDF();
+					isSaveSDF = false;
+				}
+
 				if (frame >= samplesPerFrame) {
 					isReset |= isUpdateUBO;
+					isReset |= isRecompile;
 				}
 			}
 

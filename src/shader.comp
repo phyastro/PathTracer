@@ -9,13 +9,15 @@ precision highp float;
 #define PI 3.141592653589792623810034526344
 #define ONEBYTHREE 0.3333333
 #define MAX_OBJECTS_SIZE 1024
-#define MAX_MATERIALS_SIZE 1024
+#define MAX_SDFS_SIZE 768
+#define MAX_MATERIALS_SIZE 975
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std430) uniform ubo {
-    float numObjects[5];
+    float numObjects[6];
     float objects[MAX_OBJECTS_SIZE];
+    float sdfs[MAX_SDFS_SIZE];
     float materials[MAX_MATERIALS_SIZE];
     float CIELMS2006[1323];
 };
@@ -97,6 +99,11 @@ struct cyclide {
     float d;
     float brad;
     int materialID;
+};
+
+struct sdf {
+    vec3 pos;
+    vec3 size;
 };
 
 struct material {
@@ -181,6 +188,13 @@ void UnpackCyclide(inout cyclide object, in int index, in int offset) {
     object.materialID = int(objects[index + 14 + offset]) - 1;
 }
 
+void UnpackSDF(inout sdf object, in int index) {
+    // Unpack SDF From SDFs Array
+    index *= 6;
+    object.pos = vec3(sdfs[index], sdfs[index + 1], sdfs[index + 2]);
+    object.size = vec3(sdfs[index + 3], sdfs[index + 4], sdfs[index + 5]);
+}
+
 void UnpackMaterial(inout material mat, in int index) {
     // Unpack Material From Materials Array
     index *= 5;
@@ -189,6 +203,21 @@ void UnpackMaterial(inout material mat, in int index) {
     mat.reflection.z = materials[index + 2];
     mat.emission.x = materials[index + 3];
     mat.emission.y = materials[index + 4];
+}
+
+void GetMaterialMix(inout material mat, in float materialID) {
+    // Takes Material Mixture ID Then Interpolates The Materials
+    material material1;
+    material material2;
+    UnpackMaterial(material1, int(floor(materialID)));
+    UnpackMaterial(material2, int(ceil(materialID)));
+
+    float x = materialID - floor(materialID);
+    mat.reflection.x = mix(material1.reflection.x, material2.reflection.x, x);
+    mat.reflection.y = mix(material1.reflection.y, material2.reflection.y, x);
+    mat.reflection.z = mix(material1.reflection.z, material2.reflection.z, x);
+    mat.emission.x = mix(material1.emission.x, material2.emission.x, x);
+    mat.emission.y = mix(material1.emission.y, material2.emission.y, x);
 }
 
 void SortMinMax(inout vec3 t1, inout vec3 t2) {
@@ -213,7 +242,7 @@ bool BoundingSphere(in Ray ray, in vec3 pos, in float radius2) {
     return true;
 }
 
-bool RayIntersectAABB(in vec3 origin, in vec3 invdir, in box object) {
+vec2 RayIntersectAABB(in vec3 origin, in vec3 invdir, in box object) {
     // Checks Whether The Ray Is Intersecting Given Box
     vec3 localorigin = origin - object.pos;
     vec3 tMin = fma(object.size, vec3(-0.5), -localorigin) * invdir;
@@ -221,13 +250,10 @@ bool RayIntersectAABB(in vec3 origin, in vec3 invdir, in box object) {
     SortMinMax(tMin, tMax);
     float t1 = max(max(tMin.x, tMin.y), tMin.z);
     float t2 = min(min(tMax.x, tMax.y), tMax.z);
-    if ((t1 > t2) || ((t1 < 0.0) && (t2 < 0.0))) {
-        return false;
-    }
-    return true;
+    return vec2(t1, t2);
 }
 
-bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout vec3 normal, inout int materialID) {
+bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout vec3 normal, inout float materialID) {
     // Ray-Intersection Of Sphere
     // Built By Solving The Equation: x^2 + y^2 + z^2 = r^2
     vec3 localorigin = ray.origin - object.pos;
@@ -250,13 +276,13 @@ bool SphereIntersection(in Ray ray, in sphere object, inout float hitdist, inout
     if (t < hitdist) {
         hitdist = t;
         normal = normalize(fma(ray.dir, vec3(t), localorigin) * isOutside);
-        materialID = object.materialID;
+        materialID = float(object.materialID);
         return true;
     }
     return false;
 }
 
-bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout vec3 normal, inout int materialID) {
+bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout vec3 normal, inout float materialID) {
     // Ray-Intersection Of Plane
     // Built By Solving The Equation: z = 0
     vec3 localorigin = ray.origin - object.pos;
@@ -267,13 +293,13 @@ bool PlaneIntersection(in Ray ray, in plane object, inout float hitdist, inout v
     if (t < hitdist) {
         hitdist = t;
         normal = faceforward(vec3(0.0, 1.0, 0.0), ray.dir, vec3(0.0, 1.0, 0.0));
-        materialID = object.materialID;
+        materialID = float(object.materialID);
         return true;
     }
     return false;
 }
 
-bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout int materialID) {
+bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 normal, inout float materialID) {
     // Ray-Intersection Of Box
     mat3 matrix = RotationMatrix(object.rotation);
     vec3 localorigin = (ray.origin - object.pos) * matrix;
@@ -295,13 +321,13 @@ bool BoxIntersection(in Ray ray, in box object, inout float hitdist, inout vec3 
         // The Signed Component Of p Which Has Highest Magnitude Is The Normal
         vec3 p = abs(localorigin + ray.dir * t);
         normal = matrix * (step(max(max(p.x, p.y), p.z), p) * -sign(ray.dir));
-        materialID = object.materialID;
+        materialID = float(object.materialID);
         return true;
     }
     return false;
 }
 
-bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSlicePos, in bool isSideInvert, inout float hitdist, inout vec3 normal, inout int isOutside, inout int materialID) {
+bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSlicePos, in bool isSideInvert, inout float hitdist, inout vec3 normal, inout int isOutside, inout float materialID) {
     // Ray-Intersection Of Sliced Sphere
     // Slicing Based On Parameters Slice Size And Slice Side
     // Slicing Is Done Using 1D Interval Checks
@@ -347,13 +373,13 @@ bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSl
         hitdist = t;
         normal = matrix * normalize(fma(localRay.dir, vec3(t), localRay.origin) * isOut);
         isOutside = (!isSideInvert) ? isOut : -isOut;
-        materialID = object.materialID;
+        materialID = float(object.materialID);
         return true;
     }
     return false;
 }
 
-void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec3 normal, inout int isOutside, inout int materialID) {
+void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec3 normal, inout int isOutside, inout float materialID) {
     // Ray-Intersection Of Lens
     // Done By Joining Two Slices Of Sphere
     // Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
@@ -471,7 +497,7 @@ bvec4 SolveQuartic(in float a, in float b, in float c, in float d, in float e, i
     return isReal;
 }
 
-bool Thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout int materialID) {
+bool Thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout float materialID) {
     // Equation: x^2(x^2 + 2y^2 - 6y + 2z^2) + y^2(y^2 + 2y + 2z^2) + z^2(10z^2 - 12) + 1 = 0
     // Substitute Light Ray Equation Into This Equation To Get The Polynomial In Terms Of t, Substitution Has Been Done Manually, Then Solve For t Using The Quartic Equation Solver.
     if (!BoundingSphere(ray, vec3(0.0, 0.0, 0.0), 4.05)) {
@@ -511,13 +537,13 @@ bool Thritorius(in Ray ray, inout float hitdist, inout vec3 normal, inout int ma
             normal *= -1.0;
         }
         normal = normalize(normal);
-        materialID = 1;
+        materialID = 1.0;
         return true;
     }
     return false;
 }
 
-bool SmoothCuboid(in Ray ray, inout float hitdist, inout vec3 normal, inout int materialID) {
+bool SmoothCuboid(in Ray ray, inout float hitdist, inout vec3 normal, inout float materialID) {
     // Equation: x^4 + y^4 + z^4 = 1
     // Substitute Light Ray Equation Into This Equation To Get The Polynomial In Terms Of t, Substitution Has Been Done Manually, Then Solve For t Using The Quartic Equation Solver.
     if (!BoundingSphere(ray, vec3(0.0, 0.0, 0.0), 1.80)) {
@@ -553,13 +579,13 @@ bool SmoothCuboid(in Ray ray, inout float hitdist, inout vec3 normal, inout int 
             normal *= -1.0;
         }
         normal = normalize(normal);
-        materialID = 3;
+        materialID = 3.0;
         return true;
     }
     return false;
 }
 
-bool DupinCyclide(in Ray ray, in cyclide object, inout float hitdist, inout vec3 normal, inout int materialID) {
+bool DupinCyclide(in Ray ray, in cyclide object, inout float hitdist, inout vec3 normal, inout float materialID) {
     // Equation: (x^2 + y^2 + z^2 + b^2 - d^2)^2 = 4((ax - cd)^2 + (by)^2)
     // Substitute Light Ray Equation Into This Equation To Get The Polynomial In Terms Of t, Substitution Has Been Done Manually, Then Solve For t Using The Quartic Equation Solver.
     mat3 matrix = RotationMatrix(object.rotation);
@@ -600,85 +626,184 @@ bool DupinCyclide(in Ray ray, in cyclide object, inout float hitdist, inout vec3
         //    normal *= -1.0;
         //}
         normal = normalize(normal);
-        materialID = object.materialID;
+        materialID = float(object.materialID);
         return true;
     }
     return false;
 }
 
-float SDF(in vec3 p) {
-    float s1 = length(p) - 2.0;
-    float s2 = length(vec3(p.x, p.y - 2.0, p.z)) - 1.4;
-    float s3 = length(vec3(p.x - 0.5, p.y - 2.5, p.z - 1.0)) - 0.5;
-    float s4 = length(vec3(p.x + 0.5, p.y - 2.5, p.z - 1.0)) - 0.5;
-    return min(min(min(s1, s2), s3), s4);
+float minMaterial(float x, float y, float material1, float material2) {
+    return (x < y) ? material1 : material2;
 }
 
-void SphereTracing(in Ray ray, inout float hitdist) {
-    float t = 0.0;
-    float omega = 1.25;
-    float dynamicOmega = omega;
-    float omegaMix = 1.0;
+// https://iquilezles.org/articles/smin/
+float smin(in float x, in float y) {
+    float k = 0.02;
+    k *= 6.0;
+    float h = max(k - abs(x - y), 0.0) / k;
+    float m = h * h * h * 0.5;
+    float s = m * k * ONEBYTHREE;
+    return min(x, y) - s;
+}
+
+vec2 smin(in vec2 x, in vec2 y) {
+    float k = 0.02;
+    k *= 6.0;
+    float h = max(k - abs(x.x - y.x), 0.0) / k;
+    float m = h * h * h * 0.5;
+    float s = m * k * ONEBYTHREE;
+    return (x.x < y.x) ? vec2(x.x - s, x.y + (y.y - x.y) * m) : vec2(y.x - s, x.y + (y.y - x.y) * (1.0 - m));
+}
+
+// All SDF Are Inserted Here
+
+float SDF(in vec3 p, in uint set1, in uint set2, in uint set3, in uint set4) {
+    float sdf = MAXDIST;
+    // Put SDF Functions Here
+
+    return sdf;
+}
+
+float SDFMATERIAL(in vec3 p, in uint set1, in uint set2, in uint set3, in uint set4) {
+    float sdf = MAXDIST;
+    float sdfmaterial = 0.0;
+    // Put SDFMATERIAL Functions Here
+
+    return sdfmaterial;
+}
+
+vec3 CalculateNumericalSDFNormals(in vec3 p, in uint set1, in uint set2, in uint set3, in uint set4) {
+    float epsilon = 1e-4;
+    vec2 h = vec2(epsilon, 0.0);
+    // Normal = Unit Gradient = normalize(<∂f/∂x,∂f/∂y,∂f/∂z>)
+    return normalize(vec3(
+            SDF(p + h.xyy, set1, set2, set3, set4) - SDF(p - h.xyy, set1, set2, set3, set4),
+            SDF(p + h.yxy, set1, set2, set3, set4) - SDF(p - h.yxy, set1, set2, set3, set4),
+            SDF(p + h.yyx, set1, set2, set3, set4) - SDF(p - h.yyx, set1, set2, set3, set4)
+        ));
+}
+
+bool SearchSDF(in vec3 p, in vec3 invdir, inout vec2 tMinMax, inout uint set1, inout uint set2, inout uint set3, inout uint set4) {
+    bool isFoundSDF = false;
+    set1 = 0;
+    set2 = 0;
+    set3 = 0;
+    set4 = 0;
+    for (int i = 0; i < numObjects[5]; i++) {
+        box boundingBox;
+        sdf sdf;
+        UnpackSDF(sdf, i);
+        boundingBox.pos = sdf.pos;
+        boundingBox.size = sdf.size;
+        vec2 boxMinMax = RayIntersectAABB(p, invdir, boundingBox);
+        if ((boxMinMax.x > boxMinMax.y) || (boxMinMax.y < 0.0)) {
+            continue;
+        }
+        if (boxMinMax.x < tMinMax.x) {
+            isFoundSDF = true;
+            if (boxMinMax.y < tMinMax.x) {
+                tMinMax = boxMinMax;
+                set1 = 1 << uint(i);
+            } else {
+                if (boxMinMax.y < tMinMax.y) {
+                    tMinMax.x = boxMinMax.x;
+                    set1 += 1 << uint(i);
+                } else {
+                    tMinMax = boxMinMax;
+                    set1 += 1 << uint(i);
+                }
+            }
+        } else {
+            if (boxMinMax.x < tMinMax.y) {
+                isFoundSDF = true;
+                if (boxMinMax.y > tMinMax.y) {
+                    tMinMax.y = boxMinMax.y;
+                    set1 += 1 << uint(i);
+                } else {
+                    set1 += 1 << uint(i);
+                }
+            }
+        }
+    }
+
+    return isFoundSDF;
+}
+
+void SphereTracing(in Ray ray, inout float hitdist, inout vec3 normal, inout float materialID) {
+    float t = 1e-3;
+    float insT = 0.0;
+    float omegaMax = 1.70;
+    float omegaSpeed = 0.30;
+    float omega = omegaMax;
     float previousRadius = 0.0;
-    float stepLength = 0.0;
     vec3 p = ray.origin;
     vec3 invdir = 1.0 / ray.dir;
-    box boundingBox;
-    boundingBox.pos = vec3(0.0, 0.7, 0.0);
-    boundingBox.size = vec3(4.0, 5.4, 4.0);
 
-    for (int i = 0; i < 256; i++) {
-        float radius = abs(SDF(p));
+    vec2 tMinMax = vec2(MAXDIST);
+    uint set1 = 0;
+    uint set2 = 0;
+    uint set3 = 0;
+    uint set4 = 0;
+    if (SearchSDF(p, invdir, tMinMax, set1, set2, set3, set4)) {
+        t = max(tMinMax.x, t);
+        p = fma(ray.dir, vec3(t), ray.origin);
+    } else {
+        return;
+    }
+    float k = sign(SDF(ray.origin, set1, set2, set3, set4));
+
+    for (int i = 0; i < 512; i++) {
+        // Calculate SDF
+        float radius = SDF(p, set1, set2, set3, set4);
+
+        // Over-Relaxation Sphere Tracing: https://erleuchtet.org/~cupe/permanent/enhanced_sphere_tracing.pdf
+        if (insT > (abs(previousRadius) + abs(radius))) {
+            t -= insT;
+            omega = 1.0;
+
+            insT = previousRadius * omega * k;
+            t += insT;
+            p = fma(ray.dir, vec3(t), ray.origin);
+            continue;
+        }
 
         // Minimum Distance
-        if (radius < MINDIST) {
+        if (abs(radius) < 1e-4) {
             break;
         }
 
-        t += radius;
-
-        // Maximum Distance Limit And Bounding Box
-        if ((t > MAXDIST) || !RayIntersectAABB(p, invdir, boundingBox)) {
-            return;
+        // Bounding Box Check
+        if (t > tMinMax.y) {
+            t = tMinMax.y + 1e-3;
+            tMinMax = vec2(MAXDIST);
+            if (SearchSDF(fma(ray.dir, vec3(t), ray.origin), invdir, tMinMax, set1, set2, set3, set4)) {
+                tMinMax += vec2(t); // We Need It To Be With Respect To Ray Origin
+                t = max(tMinMax.x, t); // We Don't Want To Start The Ray From Back, Possible If tMinMax.x Is Negative
+                p = fma(ray.dir, vec3(t), ray.origin);
+                continue;
+            } else {
+                return;
+            }
         }
 
-        // Over-Relaxation Sphere Tracing: https://erleuchtet.org/~cupe/permanent/enhanced_sphere_tracing.pdf
-        //bool isStepLengthExceeded = stepLength > (radius + previousRadius);
-        //if (isStepLengthExceeded) {
-        //    t -= stepLength;
-        //    stepLength = previousRadius;
-        //    dynamicOmega = 1.0;
-        //    omegaMix = 0.0;
-        //} else {
-        //    stepLength = radius * dynamicOmega;
-        //    t += stepLength;
-        //    previousRadius = radius;
-        //}
+        // Update Distance
+        insT = radius * omega * k;
+        t += insT;
 
-        // Minimum Distance
-        //if (stepLength < MINDIST) {
-        //    break;
-        //}
-
-        // Bounding Box On The SDF
-        //if (!RayIntersectAABB(p, invdir, boundingBox) && !isStepLengthExceeded) {
-        //    return;
-        //}
-
-        // Progress Towards Original Value Of Omega
-        //dynamicOmega = mix(dynamicOmega, omega, omegaMix);
-        //if (omegaMix < 1.0) {
-        //    omegaMix = clamp(omegaMix + 0.2, 0.0, 1.0);
-        //}
-
-        // Update Ray Origin
+        // Update Variables
         p = fma(ray.dir, vec3(t), ray.origin);
+        omega += omegaSpeed * (mix(1.0, omegaMax, min(radius / previousRadius, 1.0)) - omega);
+        previousRadius = radius;
     }
 
-    hitdist = t;
+    if (t < hitdist) {
+        hitdist = t;
+        normal = CalculateNumericalSDFNormals(p, set1, set2, set3, set4);
+        materialID = SDFMATERIAL(p, set1, set2, set3, set4);
+    }
 }
 
-float Intersection(in Ray ray, inout vec3 normal, inout int materialID) {
+float Intersection(in Ray ray, inout vec3 normal, inout float materialID) {
     // Finds The Ray-Intersection Of Every Object In The Scene
     float hitdist = MAXDIST;
     int offset = 0;
@@ -733,6 +858,8 @@ float Intersection(in Ray ray, inout vec3 normal, inout int materialID) {
     }
     offset += 15 * int(numObjects[4]);
 
+    SphereTracing(ray, hitdist, normal, materialID);
+
     //ray.origin -= vec3(-3.0, 1.06, -6.0);
     //SmoothCuboid(ray, hitdist, normal, materialID);
     //ray.origin += vec3(-3.0, 1.06, -6.0);
@@ -758,8 +885,7 @@ float RandomFloat(inout uint seed) {
 uint GenerateSeed(in uvec2 xy, in int k) {
     // Actually This Is Not The Correct Way To Generate Seed
     // This Is The Correct Implementation Which Has No Overlapping:
-    /* uint seed = (resolution.x * resolution.y) * (frame - samplesPerFrame + k);
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    	   seed += xy.x + resolution.x * xy.y;*/
+    /* uint seed = (resolution.x * resolution.y) * (frame - samplesPerFrame + k);  seed += xy.x + resolution.x * xy.y;*/
     // But Because This Seed Crosses 32-Bit Limit Quickly, And Implementing In 64-Bit Makes Path Tracer Much Slower,
     // That's Why I Implemented This Trick. Even If Pixels Seed Overlap With Other Pixels Somewhere, It Won't Affect The Result
     uint seed = uint(frame - samplesPerFrame + k);
@@ -879,10 +1005,10 @@ float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint 
     // Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
     float radiance = 0.0;
     vec3 normal = vec3(0.0);
-    int materialID = 0;
+    float materialID = 0.0;
     float hitdist = Intersection(inRay, normal, materialID);
     material mat;
-    UnpackMaterial(mat, materialID);
+    GetMaterialMix(mat, materialID);
     Ray outRay = inRay;
     if (hitdist < MAXDIST) {
         // Calculate The Next Ray's Origin And Direction
@@ -946,7 +1072,7 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
         float hitdist = 1e6;
         vec3 normal = vec3(0.0);
         int isOutside = 1;
-        int materialID = 0;
+        float materialID = 0.0;
         LensIntersection(ray, object, hitdist, normal, isOutside, materialID);
         // Calculate The Refractive Index
         float n1 = 1.0;
@@ -994,13 +1120,9 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
     // Ray Passes Through The Lens Here
     TracePathLens(l, ray, forwardDir);
     color += TracePath(l, ray, seed) * WaveToLMS(l) * InverseSpectraPDF(390.0, 720.0);
-    //float hitdist = MAXDIST;
     //vec3 normal = vec3(0.0);
-    //int materialID = 0;
-    //hitdist = Intersection(ray, normal, materialID);
-    //color += normal;
-    //float hitdist = MAXDIST;
-    //SphereTracing(ray, hitdist);
+    //float materialID = 0.0;
+    //float hitdist = Intersection(ray, normal, materialID);
     //color += hitdist;
 
     return color;
