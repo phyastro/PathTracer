@@ -18,7 +18,7 @@ float sdf(in vec3 p)
         r *= r;
 
         // f_n(c) = f_n-1(c)^8 + c
-        // Using Chebynshev Polynomials
+        // Using Chebyshev Polynomials
         // Faster Than Inverse Trigonometric Functions
         float cost = z.z * invl;
         float cosp = z.y * invr;
@@ -53,5 +53,6 @@ float sdf(in vec3 p)
 
 float sdfmaterial(in vec3 p)
 {
-    return 4.0;
+    float factor = dot(p, p);
+    return mix(4.0, 3.0, factor / (0.8 + factor));
 }

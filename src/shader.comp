@@ -733,8 +733,9 @@ void SphereTracing(in Ray ray, inout float hitdist, inout vec3 normal, inout flo
     float t = 1e-3;
     float insT = 0.0;
     float omegaMax = 1.70;
-    float omegaSpeed = 0.30;
+    float omegaSpeed = 0.20;
     float omega = omegaMax;
+    float omegaSpeedFactor = 0.0;
     float previousRadius = 0.0;
     vec3 p = ray.origin;
     vec3 invdir = 1.0 / ray.dir;
@@ -792,7 +793,11 @@ void SphereTracing(in Ray ray, inout float hitdist, inout vec3 normal, inout flo
 
         // Update Variables
         p = fma(ray.dir, vec3(t), ray.origin);
-        omega += omegaSpeed * (mix(1.0, omegaMax, min(radius / previousRadius, 1.0)) - omega);
+        // 1 / (1 - eta) Is The Omega Derived For Plane Surfaces
+        // But This Assumes It's Plane Surface And Omega * Radius Can't Be More than PreviousRadius + Radius
+        // So, Set A Omega Maximum And The Speed At Which It Changes, Then Choose Best Values
+        omegaSpeedFactor = min(radius / previousRadius, 0.99);
+        omega += omegaSpeed * (min(1.0 / (1.0 - omegaSpeedFactor), omegaMax) - omega);
         previousRadius = radius;
     }
 
@@ -1120,10 +1125,6 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
     // Ray Passes Through The Lens Here
     TracePathLens(l, ray, forwardDir);
     color += TracePath(l, ray, seed) * WaveToLMS(l) * InverseSpectraPDF(390.0, 720.0);
-    //vec3 normal = vec3(0.0);
-    //float materialID = 0.0;
-    //float hitdist = Intersection(ray, normal, materialID);
-    //color += hitdist;
 
     return color;
 }

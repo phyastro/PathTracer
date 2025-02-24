@@ -1093,6 +1093,7 @@ private:
 	int currentSamples = 0;
 	int numSamples = 10000;
 	float frameTime = 0.0166f;
+	float minFrameTime = 0.0f;
 
 	float persistence = 0.0625f;
 	int pathLength = 5;
@@ -2000,7 +2001,6 @@ private:
 		}
 
 		InsertSDF();
-		std::cout << computeShaderCode << std::endl;
 
 		VkPipelineShaderStageCreateInfo computeShaderStage{};
 		computeShaderStage = CreateShaderStageInfo(CreateShaderModule(GLSLToSPIRV(computeShaderCode, EShLangCompute)), VK_SHADER_STAGE_COMPUTE_BIT, "main");
@@ -2976,6 +2976,7 @@ float sdfmaterial(in vec3 p)
 			ImGui::Text("Camera Pos: (%0.3f, %0.3f, %0.3f)", camera.pos.x, camera.pos.y, camera.pos.z);
 			isVSyncChanged = ImGui::Checkbox("VSync", &VSync);
 			ImGui::Checkbox("Lock Camera", &isCameraLocked);
+			ImGui::DragFloat("Min Latency", &minFrameTime, 1.0f, 0.0f, 1e7f);
 			isReset |= ImGui::DragInt("Samples/Frame", &samplesPerFrame, 0.02f, 1, 100);
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f, 1, 100000);
 			isLoadScene |= ImGui::Button("Load Scene", ImVec2(303, 0));
@@ -3913,6 +3914,8 @@ float sdfmaterial(in vec3 p)
         while (!glfwWindowShouldClose(window)) {
 			if (!OFFSCREENRENDER) {
 				HandleEvents(cursorPos, camera.angle, deltaCamPos);
+
+				Sleep(minFrameTime);
 
 				deltaCamPos *= 3.0f * frameTime;
 				UpdateCameraPos(camera.pos, glm::radians(camera.angle), deltaCamPos);
