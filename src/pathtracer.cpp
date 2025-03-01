@@ -37,7 +37,8 @@ const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 //#define LAUNCHFROMEXECUTABLES
 #define MAX_OBJECTS_SIZE 1024
 #define MAX_SDFS_SIZE 768
-#define MAX_MATERIALS_SIZE 975
+#define MAX_MATERIALS_SIZE 846
+#define MAX_LIGHTS_SIZE 128
 
 #ifdef DEBUGMODE
 const bool isValidationLayersEnabled = true;
@@ -108,11 +109,13 @@ struct sphere {
 	float pos[3];
 	float radius;
 	int materialID;
+	int lightID;
 };
 
 struct plane {
 	float pos[3];
 	int materialID;
+	int lightID;
 };
 
 struct box {
@@ -120,6 +123,7 @@ struct box {
 	float rotation[3];
 	float size[3];
 	int materialID;
+	int lightID;
 };
 
 struct lens {
@@ -130,6 +134,7 @@ struct lens {
 	float thickness;
 	bool isConverging;
 	int materialID;
+	int lightID;
 };
 
 struct cyclide {
@@ -142,17 +147,21 @@ struct cyclide {
 	float d;
 	float brad;
 	int materialID;
-};
-
-struct material {
-	float reflection[3];
-	float emission[2];
+	int lightID;
 };
 
 struct sdf {
 	float pos[3];
 	float size[3];
 	std::string glsl;
+};
+
+struct material {
+	float reflection[3];
+};
+
+struct light {
+	float emission[2];
 };
 
 struct Camera {
@@ -173,6 +182,7 @@ struct UniformBufferObject {
 	float packedObjects[MAX_OBJECTS_SIZE];
 	float packedSdfs[MAX_SDFS_SIZE];
 	float packedMaterials[MAX_MATERIALS_SIZE];
+	float packedLights[MAX_LIGHTS_SIZE];
 	float CIELMS2006[1323];
 };
 
@@ -1111,13 +1121,15 @@ private:
 	std::vector<box> boxes;
 	std::vector<lens> lenses;
 	std::vector<cyclide> cyclides;
-	std::vector<material> materials;
 	std::vector<sdf> sdfs;
+	std::vector<material> materials;
+	std::vector<light> lights;
 
 	bool isImGuiWindowFocused = false;
 	int objectSelection = 0;
-	int materialSelection = 0;
 	int sdfSelection = 0;
+	int materialSelection = 0;
+	int lightSelection = 0;
 
     void InitWindow() {
 		glfwInit();
@@ -2644,6 +2656,7 @@ private:
 			spheres[i].radius = scene["sphere"][i]["radius"];
 
 			spheres[i].materialID = scene["sphere"][i]["materialID"];
+			spheres[i].lightID = scene["sphere"][i]["lightID"];
 		}
 
 		planes.resize(scene["plane"].size());
@@ -2653,6 +2666,7 @@ private:
 			planes[i].pos[2] = scene["plane"][i]["position"][2];
 
 			planes[i].materialID = scene["plane"][i]["materialID"];
+			planes[i].lightID = scene["plane"][i]["lightID"];
 		}
 
 		boxes.resize(scene["box"].size());
@@ -2670,6 +2684,7 @@ private:
 			boxes[i].size[2] = scene["box"][i]["size"][2];
 
 			boxes[i].materialID = scene["box"][i]["materialID"];
+			boxes[i].lightID = scene["box"][i]["lightID"];
 		}
 
 		lenses.resize(scene["lens"].size());
@@ -2691,6 +2706,7 @@ private:
 			lenses[i].isConverging = scene["lens"][i]["isConverging"];
 
 			lenses[i].materialID = scene["lens"][i]["materialID"];
+			lenses[i].lightID = scene["lens"][i]["lightID"];
 		}
 
 		cyclides.resize(scene["cyclide"].size());
@@ -2715,6 +2731,7 @@ private:
 			cyclides[i].brad = scene["cyclide"][i]["boundingRadius"];
 
 			cyclides[i].materialID = scene["cyclide"][i]["materialID"];
+			cyclides[i].lightID = scene["cyclide"][i]["lightID"];
 		}
 
 		sdfs.resize(scene["sdf"].size());
@@ -2735,9 +2752,12 @@ private:
 			materials[i].reflection[0] = scene["material"][i]["reflection"]["peakWavelength"];
 			materials[i].reflection[1] = scene["material"][i]["reflection"]["sigma"];
 			materials[i].reflection[2] = (float)scene["material"][i]["reflection"]["isInvert"];
+		}
 
-			materials[i].emission[0] = scene["material"][i]["emission"]["temperature"];
-			materials[i].emission[1] = scene["material"][i]["emission"]["luminosity"];
+		lights.resize(scene["light"].size());
+		for (size_t i = 0; i < lights.size(); i++) {
+			lights[i].emission[0] = scene["light"][i]["emission"]["temperature"];
+			lights[i].emission[1] = scene["light"][i]["emission"]["luminosity"];
 		}
 	}
 
@@ -2775,6 +2795,7 @@ private:
 			scene["sphere"][i]["radius"] = RoundDecimal((double)spheres[i].radius, 1e5);
 
 			scene["sphere"][i]["materialID"] = spheres[i].materialID;
+			scene["sphere"][i]["lightID"] = spheres[i].lightID;
 		}
 
 		for (size_t i = 0; i < planes.size(); i++) {
@@ -2783,6 +2804,7 @@ private:
 			scene["plane"][i]["position"][2] = RoundDecimal((double)planes[i].pos[2], 1e5);
 
 			scene["plane"][i]["materialID"] = planes[i].materialID;
+			scene["plane"][i]["lightID"] = planes[i].lightID;
 		}
 
 		for (size_t i = 0; i < boxes.size(); i++) {
@@ -2799,6 +2821,7 @@ private:
 			scene["box"][i]["size"][2] = RoundDecimal((double)boxes[i].size[2], 1e5);
 
 			scene["box"][i]["materialID"] = boxes[i].materialID;
+			scene["box"][i]["lightID"] = boxes[i].lightID;
 		}
 
 		for (size_t i = 0; i < lenses.size(); i++) {
@@ -2819,6 +2842,7 @@ private:
 			scene["lens"][i]["isConverging"] = lenses[i].isConverging;
 
 			scene["lens"][i]["materialID"] = lenses[i].materialID;
+			scene["lens"][i]["lightID"] = lenses[i].lightID;
 		}
 
 		for (size_t i = 0; i < cyclides.size(); i++) {
@@ -2842,6 +2866,7 @@ private:
 			scene["cyclide"][i]["boundingRadius"] = RoundDecimal((double)cyclides[i].brad, 1e5);
 
 			scene["cyclide"][i]["materialID"] = cyclides[i].materialID;
+			scene["cyclide"][i]["lightID"] = cyclides[i].lightID;
 		}
 
 		for (size_t i = 0; i < sdfs.size(); i++) {
@@ -2860,9 +2885,11 @@ private:
 			scene["material"][i]["reflection"]["peakWavelength"] = RoundDecimal((double)materials[i].reflection[0], 1e5);
 			scene["material"][i]["reflection"]["sigma"] = RoundDecimal((double)materials[i].reflection[1], 1e5);
 			scene["material"][i]["reflection"]["isInvert"] = (bool)materials[i].reflection[2];
+		}
 
-			scene["material"][i]["emission"]["temperature"] = RoundDecimal((double)materials[i].emission[0], 1e5);
-			scene["material"][i]["emission"]["luminosity"] = RoundDecimal((double)materials[i].emission[1], 1e5);
+		for (size_t i = 0; i < lights.size(); i++) {
+			scene["light"][i]["emission"]["temperature"] = RoundDecimal((double)lights[i].emission[0], 1e5);
+			scene["light"][i]["emission"]["luminosity"] = RoundDecimal((double)lights[i].emission[1], 1e5);
 		}
 	}
 
@@ -2939,12 +2966,11 @@ private:
 	}
 
 	void ImGuiRender(std::vector<float>& framesGraph) {
-		static sphere newSphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1 };
-		static plane newPlane = { { 0.0f, 0.0f, 0.0f }, 1 };
-		static box newBox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1 };
-		static lens newLens = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1 };
-		static cyclide newCyclide = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 3.36, -3.17, -1.06, -1.50, 1 };
-		static material newMaterial = { { 550.0f, 100.0f, 0 }, { 5500.0f, 0.0f } };
+		static sphere newSphere = { { 0.0f, 0.0f, 0.0f }, 1.0f, 1, 0 };
+		static plane newPlane = { { 0.0f, 0.0f, 0.0f }, 1, 0 };
+		static box newBox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1, 0 };
+		static lens newLens = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1, 0 };
+		static cyclide newCyclide = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 3.36, -3.17, -1.06, -1.50, 1, 0 };
 		static sdf newSDF = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, R"(
 float sdf(in vec3 p){
 	return length(p) - 1.0;
@@ -2955,6 +2981,8 @@ float sdfmaterial(in vec3 p)
     return 0.0;
 })"
 		};
+		static material newMaterial = { { 550.0f, 100.0f, 0 } };
+		static light newLight = { { 5500.0f, 1.0f } };
 
 		static std::vector<float> spectrumGraph{};
 		static std::vector<float> tonemapGraph{};
@@ -3023,6 +3051,7 @@ float sdfmaterial(in vec3 p)
 			ImGui::Separator();
 
 			int numMaterials = (int)materials.size();
+			int numLights = (int)lights.size();
 
 			if (ImGui::CollapsingHeader("Objects")) {
 				int numSpheres = (int)spheres.size();
@@ -3037,6 +3066,7 @@ float sdfmaterial(in vec3 p)
 					isUpdateUBO |= ImGui::DragFloat3("Position", spheres[id].pos, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat("Radius", &spheres[id].radius, 0.01f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &spheres[id].materialID, 0.02f, 1, numMaterials);
+					isUpdateUBO |= ImGui::DragInt("Light ID", &spheres[id].lightID, 0.02f, 0, numLights);
 				}
 
 				id -= numSpheres;
@@ -3044,6 +3074,7 @@ float sdfmaterial(in vec3 p)
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Plane %i", id + 1);
 					isUpdateUBO |= ImGui::DragFloat3("Position", planes[id].pos, 0.01f);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &planes[id].materialID, 0.02f, 1, numMaterials);
+					isUpdateUBO |= ImGui::DragInt("Light ID", &planes[id].lightID, 0.02f, 0, numLights);
 				}
 
 				id -= numPlanes;
@@ -3053,6 +3084,7 @@ float sdfmaterial(in vec3 p)
 					isUpdateUBO |= ImGui::DragFloat3("Rotation", boxes[id].rotation, 0.1f);
 					isUpdateUBO |= ImGui::DragFloat3("Size", boxes[id].size, 0.01f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &boxes[id].materialID, 0.02f, 1, numMaterials);
+					isUpdateUBO |= ImGui::DragInt("Light ID", &boxes[id].lightID, 0.02f, 0, numLights);
 				}
 
 				id -= numBoxes;
@@ -3065,6 +3097,7 @@ float sdfmaterial(in vec3 p)
 					isUpdateUBO |= ImGui::DragFloat("Thickness", &lenses[id].thickness, 0.001f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::Checkbox("Convex Lens", &lenses[id].isConverging);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &lenses[id].materialID, 0.02f, 1, numMaterials);
+					isUpdateUBO |= ImGui::DragInt("Light ID", &lenses[id].lightID, 0.02f, 0, numLights);
 				}
 
 				id -= numLenses;
@@ -3079,6 +3112,7 @@ float sdfmaterial(in vec3 p)
 					isUpdateUBO |= ImGui::DragFloat("d", &cyclides[id].d, 0.01f);
 					isUpdateUBO |= ImGui::DragFloat("Bounding Radius", &cyclides[id].brad, 0.01f, 0.0f, 1e7f);
 					isUpdateUBO |= ImGui::DragInt("Material ID", &cyclides[id].materialID, 0.02f, 1, numMaterials);
+					isUpdateUBO |= ImGui::DragInt("Light ID", &cyclides[id].lightID, 0.02f, 0, numLights);
 				}
 
 				id -= numCyclides;
@@ -3244,20 +3278,6 @@ float sdfmaterial(in vec3 p)
 					isUpdateUBO |= ImGui::Checkbox("Invert", &isInvertBool);
 					materials[materialSelection].reflection[2] = (float)isInvertBool;
 					ImGui::PopID();
-
-					ImGui::Text("Emission");
-					ImGui::PushID("Emission");
-
-					spectrumGraph.clear();
-					for (int i = 1; i < 101; i++) {
-						float x = float(i) * 12e-9f;
-						spectrumGraph.push_back(BlackBodyRadiation(x, materials[materialSelection].emission[0]) / BlackBodyRadiationPeak(materials[materialSelection].emission[0]));
-					}
-
-					ImGui::PlotLines("", spectrumGraph.data(), (int)spectrumGraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
-					isUpdateUBO |= ImGui::DragFloat("Temperature", &materials[materialSelection].emission[0], 5.0f, 0.0f, 1e5f);
-					isUpdateUBO |= ImGui::DragFloat("Luminosity", &materials[materialSelection].emission[1], 0.1f, 0.0f, 1e5f);
-					ImGui::PopID();
 				}
 				ImGui::Separator();
 
@@ -3304,8 +3324,86 @@ float sdfmaterial(in vec3 p)
 							}
 						}
 
+						for (cyclide& cyclide : cyclides) {
+							if ((cyclide.materialID > materialSelection) && (cyclide.materialID > 1)) {
+								cyclide.materialID--;
+							}
+						}
+
 						if (materialSelection > 0) {
 							materialSelection--;
+						}
+					}
+
+					isUpdateUBO = true;
+				}
+			}
+
+			if (ImGui::CollapsingHeader("Lights")) {
+				if (IsInRange(lightSelection, 0, numLights - 1)) {
+					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Light %i", lightSelection + 1);
+
+					ImGui::Text("Emission");
+					ImGui::PushID("Emission");
+
+					spectrumGraph.clear();
+					for (int i = 1; i < 101; i++) {
+						float x = float(i) * 12e-9f;
+						spectrumGraph.push_back(BlackBodyRadiation(x, lights[lightSelection].emission[0]) / BlackBodyRadiationPeak(lights[lightSelection].emission[0]));
+					}
+
+					ImGui::PlotLines("", spectrumGraph.data(), (int)spectrumGraph.size(), 0, NULL, 0.0f, 1.0f, ImVec2(303, 100));
+					isUpdateUBO |= ImGui::DragFloat("Temperature", &lights[lightSelection].emission[0], 5.0f, 0.0f, 1e5f);
+					isUpdateUBO |= ImGui::DragFloat("Luminosity", &lights[lightSelection].emission[1], 0.1f, 0.0f, 1e5f);
+					ImGui::PopID();
+				}
+				ImGui::Separator();
+
+				if (ImGui::BeginTable("Lights Table", 1)) {
+					ImGui::TableSetupColumn("Lights");
+					ImGui::TableHeadersRow();
+					ItemsTable("Light ", lightSelection, 0, numLights, true);
+					ImGui::EndTable();
+				}
+				ImGui::Separator();
+
+				if (ImGui::Button("Add New Light")) {
+					lights.push_back(newLight);
+
+					lightSelection = numLights;
+					isUpdateUBO = true;
+				}
+
+				if (ImGui::Button("Delete Light")) {
+					if (IsInRange(lightSelection, 0, numLights - 1)) {
+						lights.erase(std::next(lights.begin(), lightSelection));
+
+						for (sphere& sphere : spheres) {
+							if ((sphere.lightID > lightSelection) && (sphere.lightID > 1)) {
+								sphere.lightID--;
+							}
+						}
+
+						for (plane& plane : planes) {
+							if ((plane.lightID > lightSelection) && (plane.lightID > 1)) {
+								plane.lightID--;
+							}
+						}
+
+						for (box& box : boxes) {
+							if ((box.lightID > lightSelection) && (box.lightID > 1)) {
+								box.lightID--;
+							}
+						}
+
+						for (lens& lens : lenses) {
+							if ((lens.lightID > lightSelection) && (lens.lightID > 1)) {
+								lens.lightID--;
+							}
+						}
+
+						if (lightSelection > 0) {
+							lightSelection--;
 						}
 					}
 
@@ -3594,6 +3692,7 @@ float sdfmaterial(in vec3 p)
 			std::vector<float> objectsArray;
 			std::vector<float> sdfsArray;
 			std::vector<float> materialsArray;
+			std::vector<float> lightsArray;
 
 			numObjects[0] = (float)spheres.size();
 			numObjects[1] = (float)planes.size();
@@ -3612,6 +3711,7 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back(spheres[i].pos[2]);
 				objectsArray.push_back(spheres[i].radius);
 				objectsArray.push_back((float)spheres[i].materialID);
+				objectsArray.push_back((float)spheres[i].lightID);
 			}
 
 			for (int i = 0; i < planes.size(); i++) {
@@ -3619,6 +3719,7 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back(planes[i].pos[1]);
 				objectsArray.push_back(planes[i].pos[2]);
 				objectsArray.push_back((float)planes[i].materialID);
+				objectsArray.push_back((float)planes[i].lightID);
 			}
 
 			for (int i = 0; i < boxes.size(); i++) {
@@ -3632,6 +3733,7 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back(boxes[i].size[1]);
 				objectsArray.push_back(boxes[i].size[2]);
 				objectsArray.push_back((float)boxes[i].materialID);
+				objectsArray.push_back((float)boxes[i].lightID);
 			}
 
 			for (int i = 0; i < lenses.size(); i++) {
@@ -3646,6 +3748,7 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back(lenses[i].thickness);
 				objectsArray.push_back((float)lenses[i].isConverging);
 				objectsArray.push_back((float)lenses[i].materialID);
+				objectsArray.push_back((float)lenses[i].lightID);
 			}
 
 			for (int i = 0; i < cyclides.size(); i++) {
@@ -3666,6 +3769,7 @@ float sdfmaterial(in vec3 p)
 					(glm::max(glm::max(cyclides[i].scale[0], cyclides[i].scale[1]), cyclides[i].scale[2]) *
 					glm::max(glm::max(cyclides[i].scale[0], cyclides[i].scale[1]), cyclides[i].scale[2])));
 				objectsArray.push_back((float)cyclides[i].materialID);
+				objectsArray.push_back((float)cyclides[i].lightID);
 			}
 
 			for (int i = 0; i < MAX_OBJECTS_SIZE; i++) {
@@ -3697,8 +3801,6 @@ float sdfmaterial(in vec3 p)
 				materialsArray.push_back(materials[i].reflection[0]);
 				materialsArray.push_back(materials[i].reflection[1]);
 				materialsArray.push_back(materials[i].reflection[2]);
-				materialsArray.push_back(materials[i].emission[0]);
-				materialsArray.push_back(materials[i].emission[1]);
 			}
 
 			for (int i = 0; i < MAX_MATERIALS_SIZE; i++) {
@@ -3706,6 +3808,19 @@ float sdfmaterial(in vec3 p)
 					ubo.packedMaterials[i] = materialsArray[i];
 				} else {
 					ubo.packedMaterials[i] = 0.0f;
+				}
+			}
+
+			for (int i = 0; i < lights.size(); i++) {
+				lightsArray.push_back(lights[i].emission[0]);
+				lightsArray.push_back(lights[i].emission[1]);
+			}
+
+			for (int i = 0; i < MAX_LIGHTS_SIZE; i++) {
+				if (lightsArray.size() > i) {
+					ubo.packedLights[i] = lightsArray[i];
+				} else {
+					ubo.packedLights[i] = 0.0f;
 				}
 			}
 
