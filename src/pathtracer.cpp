@@ -37,8 +37,9 @@ const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 //#define LAUNCHFROMEXECUTABLES
 #define MAX_OBJECTS_SIZE 1024
 #define MAX_SDFS_SIZE 768
-#define MAX_MATERIALS_SIZE 846
+#define MAX_MATERIALS_SIZE 783
 #define MAX_LIGHTS_SIZE 128
+#define MAX_LIGHTIDS_SIZE 64
 
 #ifdef DEBUGMODE
 const bool isValidationLayersEnabled = true;
@@ -178,11 +179,12 @@ struct Camera {
 };
 
 struct UniformBufferObject {
-	float numObjects[6];
+	float numObjects[7];
 	float packedObjects[MAX_OBJECTS_SIZE];
 	float packedSdfs[MAX_SDFS_SIZE];
 	float packedMaterials[MAX_MATERIALS_SIZE];
 	float packedLights[MAX_LIGHTS_SIZE];
+	float packedLightIDs[MAX_LIGHTIDS_SIZE];
 	float CIELMS2006[1323];
 };
 
@@ -3688,22 +3690,12 @@ float sdfmaterial(in vec3 p)
 
 	void UpdateUniformBuffer() {
 		if (isUpdateUBO) {
-			std::array<float, 6> numObjects;
+			std::array<float, 7> numObjects;
 			std::vector<float> objectsArray;
 			std::vector<float> sdfsArray;
 			std::vector<float> materialsArray;
 			std::vector<float> lightsArray;
-
-			numObjects[0] = (float)spheres.size();
-			numObjects[1] = (float)planes.size();
-			numObjects[2] = (float)boxes.size();
-			numObjects[3] = (float)lenses.size();
-			numObjects[4] = (float)cyclides.size();
-			numObjects[5] = (float)sdfs.size();
-
-			for (size_t i = 0; i < numObjects.size(); i++) {
-				ubo.numObjects[i] = numObjects[i];
-			}
+			std::vector<float> lightIDs;
 
 			for (int i = 0; i < spheres.size(); i++) {
 				objectsArray.push_back(spheres[i].pos[0]);
@@ -3712,6 +3704,9 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back(spheres[i].radius);
 				objectsArray.push_back((float)spheres[i].materialID);
 				objectsArray.push_back((float)spheres[i].lightID);
+				if (spheres[i].lightID > 0) {
+					lightIDs.push_back(i);
+				}
 			}
 
 			for (int i = 0; i < planes.size(); i++) {
@@ -3720,6 +3715,9 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back(planes[i].pos[2]);
 				objectsArray.push_back((float)planes[i].materialID);
 				objectsArray.push_back((float)planes[i].lightID);
+				if (planes[i].lightID > 0) {
+					lightIDs.push_back(spheres.size() + i);
+				}
 			}
 
 			for (int i = 0; i < boxes.size(); i++) {
@@ -3734,6 +3732,9 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back(boxes[i].size[2]);
 				objectsArray.push_back((float)boxes[i].materialID);
 				objectsArray.push_back((float)boxes[i].lightID);
+				if (boxes[i].lightID > 0) {
+					lightIDs.push_back(spheres.size() + planes.size() + i);
+				}
 			}
 
 			for (int i = 0; i < lenses.size(); i++) {
@@ -3749,6 +3750,9 @@ float sdfmaterial(in vec3 p)
 				objectsArray.push_back((float)lenses[i].isConverging);
 				objectsArray.push_back((float)lenses[i].materialID);
 				objectsArray.push_back((float)lenses[i].lightID);
+				if (planes[i].lightID > 0) {
+					lightIDs.push_back(spheres.size() + planes.size() + boxes.size() + i);
+				}
 			}
 
 			for (int i = 0; i < cyclides.size(); i++) {
@@ -3770,6 +3774,21 @@ float sdfmaterial(in vec3 p)
 					glm::max(glm::max(cyclides[i].scale[0], cyclides[i].scale[1]), cyclides[i].scale[2])));
 				objectsArray.push_back((float)cyclides[i].materialID);
 				objectsArray.push_back((float)cyclides[i].lightID);
+				if (planes[i].lightID > 0) {
+					lightIDs.push_back(spheres.size() + planes.size() + boxes.size() + lenses.size() + i);
+				}
+			}
+
+			numObjects[0] = (float)spheres.size();
+			numObjects[1] = (float)planes.size();
+			numObjects[2] = (float)boxes.size();
+			numObjects[3] = (float)lenses.size();
+			numObjects[4] = (float)cyclides.size();
+			numObjects[5] = (float)sdfs.size();
+			numObjects[6] = (float)lightIDs.size();
+
+			for (size_t i = 0; i < numObjects.size(); i++) {
+				ubo.numObjects[i] = numObjects[i];
 			}
 
 			for (int i = 0; i < MAX_OBJECTS_SIZE; i++) {
@@ -3821,6 +3840,14 @@ float sdfmaterial(in vec3 p)
 					ubo.packedLights[i] = lightsArray[i];
 				} else {
 					ubo.packedLights[i] = 0.0f;
+				}
+			}
+
+			for (int i = 0; i < MAX_LIGHTIDS_SIZE; i++) {
+				if (lightIDs.size() > i) {
+					ubo.packedLightIDs[i] = lightIDs[i];
+				} else {
+					ubo.packedLightIDs[i] = 0.0f;
 				}
 			}
 

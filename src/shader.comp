@@ -10,17 +10,19 @@ precision highp float;
 #define ONEBYTHREE 0.3333333
 #define MAX_OBJECTS_SIZE 1024
 #define MAX_SDFS_SIZE 768
-#define MAX_MATERIALS_SIZE 846
+#define MAX_MATERIALS_SIZE 783
 #define MAX_LIGHTS_SIZE 128
+#define MAX_LIGHTIDS_SIZE 64
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std430) uniform ubo {
-    float numObjects[6];
+    float numObjects[7];
     float objects[MAX_OBJECTS_SIZE];
     float sdfs[MAX_SDFS_SIZE];
     float materials[MAX_MATERIALS_SIZE];
     float lights[MAX_LIGHTS_SIZE];
+    float lightIDs[MAX_LIGHTIDS_SIZE];
     float CIELMS2006[1323];
 };
 
@@ -414,7 +416,7 @@ bool SphereSliceIntersection(in Ray ray, in sphereSlice object, in float localSl
     return false;
 }
 
-void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec3 normal, inout int isOutside, inout float materialID, inout float lightID) {
+bool LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec3 normal, inout int isOutside, inout float materialID, inout float lightID) {
     // Ray-Intersection Of Lens
     // Done By Joining Two Slices Of Sphere
     // Thickness Of Lens Is Calculated By Using The Equation: thickness = 2(2f - sqrt(4f^2 - R^2))
@@ -427,6 +429,7 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
     if (object.isConverging) {
         lensSlicePos += lensThicknessHalf;
     }
+    bool isIntersect = false;
     for (int i = 0; i < 2; i++) {
         sphereSlice slice;
         slice.pos = object.pos;
@@ -436,8 +439,10 @@ void LensIntersection(in Ray ray, in lens object, inout float hitdist, inout vec
         slice.rotation = object.rotation;
         slice.materialID = object.materialID;
         slice.lightID = object.lightID;
-        SphereSliceIntersection(ray, slice, lensSlicePos, !object.isConverging, hitdist, normal, isOutside, materialID, lightID);
+        isIntersect = isIntersect || SphereSliceIntersection(ray, slice, lensSlicePos, !object.isConverging, hitdist, normal, isOutside, materialID, lightID);
     }
+
+    return isIntersect;
 }
 
 float EvalQuadratic(in float a, in float b, in float c, in float x) {
@@ -846,26 +851,33 @@ void SphereTracing(in Ray ray, inout float hitdist, inout vec3 normal, inout flo
     }
 }
 
-float Intersection(in Ray ray, inout vec3 normal, inout float materialID, inout float lightID) {
+float Intersection(in Ray ray, inout vec3 normal, inout float materialID, inout float lightID, inout int objectID) {
     // Finds The Ray-Intersection Of Every Object In The Scene
     float hitdist = MAXDIST;
     int offset = 0;
+    int objectOffset = 0;
 
     // Iterate Over All The Spheres In The Scene
     for (int i = 0; i < numObjects[0]; i++) {
         sphere object;
         UnpackSphere(object, i);
-        SphereIntersection(ray, object, hitdist, normal, materialID, lightID);
+        if (SphereIntersection(ray, object, hitdist, normal, materialID, lightID)) {
+            objectID = i;
+        }
     }
     offset += 6 * int(numObjects[0]);
+    objectOffset += int(numObjects[0]);
 
     // Iterate Over All The Planes In The Scene
     for (int i = 0; i < numObjects[1]; i++) {
         plane object;
         UnpackPlane(object, i, offset);
-        PlaneIntersection(ray, object, hitdist, normal, materialID, lightID);
+        if (PlaneIntersection(ray, object, hitdist, normal, materialID, lightID)) {
+            objectID = i + objectOffset;
+        }
     }
     offset += 5 * int(numObjects[1]);
+    objectOffset += int(numObjects[1]);
 
     // Iterate Over All The Boxes In The Scene
     for (int i = 0; i < numObjects[2]; i++) {
@@ -874,9 +886,12 @@ float Intersection(in Ray ray, inout vec3 normal, inout float materialID, inout 
         if (!BoundingSphere(ray, object.pos, 0.25 * dot(object.size, object.size))) {
             continue;
         }
-        BoxIntersection(ray, object, hitdist, normal, materialID, lightID);
+        if (BoxIntersection(ray, object, hitdist, normal, materialID, lightID)) {
+            objectID = i + objectOffset;
+        }
     }
     offset += 11 * int(numObjects[2]);
+    objectOffset += int(numObjects[2]);
 
     // Iterate Over All The Lenses In The Scene
     for (int i = 0; i < numObjects[3]; i++) {
@@ -886,9 +901,12 @@ float Intersection(in Ray ray, inout vec3 normal, inout float materialID, inout 
         if (!BoundingSphere(ray, object.pos, (object.radius * object.radius) + (0.25 * object.thickness * object.thickness))) {
             continue;
         }
-        LensIntersection(ray, object, hitdist, normal, isOutside, materialID, lightID);
+        if (LensIntersection(ray, object, hitdist, normal, isOutside, materialID, lightID)) {
+            objectID = i + objectOffset;
+        }
     }
     offset += 12 * int(numObjects[3]);
+    objectOffset += int(numObjects[3]);
 
     // Iterate Over All The Cyclides In The Scene
     for (int i = 0; i < numObjects[4]; i++) {
@@ -897,9 +915,12 @@ float Intersection(in Ray ray, inout vec3 normal, inout float materialID, inout 
         if (!BoundingSphere(ray, object.pos, object.brad)) {
             continue;
         }
-        DupinCyclide(ray, object, hitdist, normal, materialID, lightID);
+        if (DupinCyclide(ray, object, hitdist, normal, materialID, lightID)) {
+            objectID = i + objectOffset;
+        }
     }
     offset += 16 * int(numObjects[4]);
+    objectOffset += int(numObjects[4]);
 
     SphereTracing(ray, hitdist, normal, materialID, lightID);
 
@@ -960,11 +981,11 @@ vec3 SampleUniformUnitSphere(inout uint seed) {
     // Longitude Is Generated Uniformly And Sin Of Latitude Is Generated Uniformly
     // Reason: If We Generate Latitude Uniformly, The Top And Bottom Of The Sphere Will Have More Points Than Other Regions
     float phi = 2.0 * PI * RandomFloat(seed);
-    float sintheta = 2.0 * RandomFloat(seed) - 1.0;
-    float costheta = sqrt(1.0 - sintheta * sintheta);
-    float x = cos(phi) * costheta;
-    float y = sin(phi) * costheta;
-    float z = sintheta;
+    float sinTheta = 2.0 * RandomFloat(seed) - 1.0;
+    float cosTheta = sqrt(fma(-sinTheta, sinTheta, 1.0));
+    float x = cos(phi) * cosTheta;
+    float y = sin(phi) * cosTheta;
+    float z = sinTheta;
     return vec3(x, y, z);
 }
 
@@ -974,11 +995,28 @@ vec3 SampleCosineDirectionHemisphere(in vec3 normal, inout uint seed) {
     return normalize(sumvector);
 }
 
-float CosineDirectionPDF(in float costheta) {
+float CosineDirectionPDF(in float cosTheta) {
     // Idea: Integrating Over Cosine PDF Must Give 1
     // Solution: Divide Cosine By Pi
     // Note: Integrating Equation Is Solid Angle. Must Insert PDF Inside Integrals To Normalize
-    return costheta / PI;
+    return cosTheta / PI;
+}
+
+vec3 SampleCosineUnitCone(inout uint seed, in float cosThetaMax) {
+    // Sampling Directions In Cone In Cosine Distribution
+    float cosAlphaMax = 2.0 * cosThetaMax * cosThetaMax - 1.0;
+    float phi = 2.0 * PI * RandomFloat(seed);
+    float cosTheta = (1.0 - cosAlphaMax) * RandomFloat(seed) + cosAlphaMax;
+    float sinTheta = sqrt(fma(-cosTheta, cosTheta, 1.0));
+    float x = cos(phi) * sinTheta;
+    float y = sin(phi) * sinTheta;
+    float z = cosTheta + 1.0;
+    return normalize(vec3(x, y, z));
+}
+
+float CosineUnitConePDF(in float cosTheta, in float cosThetaMax) {
+    // PDF For Sampling Directions In Cone In Cosine Distribution
+    return cosTheta / (PI * (1.0 - cosThetaMax * cosThetaMax));
 }
 
 float SpectralPowerDistribution(in float l, in float l_peak, in float d, in int invert) {
@@ -1044,30 +1082,170 @@ float BRDFPDF(in vec3 outDir, in vec3 normal) {
     return CosineDirectionPDF(dot(outDir, normal));
 }
 
-float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint seed, inout bool isTerminate) {
+void OrthonormalBasis(inout vec3 b1, inout vec3 b2, in vec3 n) {
+    // Creates Orthogonal Vectors To Each Other And Normal
+    b1 = vec3(0.0, -1.0, 0.0);
+    b2 = vec3(-1.0, 0.0, 0.0);
+    if (n.z >= -0.9999999) {
+        float a = 1.0 / (1.0 + n.z);
+        float b = -n.x * n.y * a;
+        b1 = vec3(1.0 - (n.x * n.x * a), b, -n.x);
+        b2 = vec3(b, 1.0 - (n.y * n.y * a), -n.y);
+    }
+}
+
+vec3 ToLocal(in vec3 v, in vec3 n) {
+    // Convert World Space To Local Space Based On Normal Vector
+    vec3 s = vec3(0.0);
+    vec3 t = vec3(0.0);
+    OrthonormalBasis(s, t, n);
+    return vec3(dot(v, s), dot(v, t), dot(v, n));
+}
+
+vec3 ToWorld(in vec3 v, in vec3 n) {
+    // Convert Local Space To World Space Based On Normal Vector
+    vec3 s = vec3(0.0);
+    vec3 t = vec3(0.0);
+    OrthonormalBasis(s, t, n);
+    return s * v.x + t * v.y + n * v.z;
+}
+
+int SampleRandomLightSource(inout uint seed, inout float boundingRadius, inout vec3 pos) {
+    // Samples Random Light Source Out Of Existing Light Sources
+    int randomLight = int(floor(RandomFloat(seed) * numObjects[6]));
+    int randomLightID = int(lightIDs[randomLight]);
+    int offset = 0;
+
+    if (randomLightID < int(numObjects[0])) {
+        sphere object;
+        UnpackSphere(object, randomLightID);
+        boundingRadius = object.radius;
+        pos = object.pos;
+        return int(lightIDs[randomLight]);
+    }
+    randomLightID -= int(numObjects[0]);
+    offset += 6 * int(numObjects[0]);
+    if (randomLightID < int(numObjects[1])) {
+        plane object;
+        UnpackPlane(object, randomLightID, offset);
+        boundingRadius = 1e5f;
+        pos = object.pos;
+        return int(lightIDs[randomLight]);
+    }
+    randomLightID -= int(numObjects[1]);
+    offset += 5 * int(numObjects[1]);
+    if (randomLightID < int(numObjects[2])) {
+        box object;
+        UnpackBox(object, randomLightID, offset);
+        boundingRadius = 0.5 * length(object.size);
+        pos = object.pos;
+        return int(lightIDs[randomLight]);
+    }
+    randomLightID -= int(numObjects[2]);
+    offset += 11 * int(numObjects[2]);
+    if (randomLightID < int(numObjects[2])) {
+        lens object;
+        UnpackLens(object, randomLightID, offset);
+        boundingRadius = sqrt((object.radius * object.radius) + (0.25 * object.thickness * object.thickness));
+        pos = object.pos;
+        return int(lightIDs[randomLight]);
+    }
+    randomLightID -= int(numObjects[3]);
+    offset += 12 * int(numObjects[3]);
+    if (randomLightID < int(numObjects[3])) {
+        cyclide object;
+        UnpackCyclide(object, randomLightID, offset);
+        boundingRadius = sqrt(object.brad);
+        pos = object.pos;
+        return int(lightIDs[randomLight]);
+    }
+
+    return 0;
+}
+
+float RandomLightSourcePDF() {
+    // PDF For Randomly Selecting Light Source
+    return 1.0 / numObjects[6];
+}
+
+// https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf
+float MISPowerHeuristicsBeta2(in float pdf1, in float pdf2) {
+    // MIS Weights
+    return pdf1 * pdf1 / (pdf1 * pdf1 + pdf2 * pdf2);
+}
+
+float SampleLightSource(in float l, in float rayradiance, in Ray inRay, in Ray outRay, in vec3 normal, in material mat, inout uint seed, in float BRDFpdf, inout float MISBRDFWeight) {
+    // Sample Light Source Method
+    // Samples The Rays Towards The Light Source
+    float boundingRadius = 0.0;
+    vec3 lightPos = vec3(0.0);
+    int lightObjectID = 0;
+    float lightpdf = 0.0;
+    if (numObjects[6] > 0) {
+        lightObjectID = SampleRandomLightSource(seed, boundingRadius, lightPos);
+        float invLightDistance = 1.0 / length(lightPos - outRay.origin);
+        vec3 lightDir = (lightPos - outRay.origin) * invLightDistance;
+        float sinthetaMax = min(boundingRadius * invLightDistance, 1.0);
+        float costhetaMax = sqrt(1.0 - sinthetaMax * sinthetaMax);
+        outRay.dir = ToWorld(SampleCosineUnitCone(seed, costhetaMax), lightDir);
+        float costheta = dot(outRay.dir, normal);
+
+        lightpdf = RandomLightSourcePDF();
+        lightpdf *= CosineUnitConePDF(dot(outRay.dir, lightDir), costhetaMax);
+        MISBRDFWeight = MISPowerHeuristicsBeta2(BRDFpdf, lightpdf);
+
+        if (costheta >= 0.0) {
+            // Check The Whether The Ray Hits The Light Source
+            vec3 normalOut = vec3(0.0);
+            float materialIDOut = 0.0;
+            float lightIDOut = -1.0;
+            int objectIDOut = 0;
+            float hitdist = Intersection(outRay, normalOut, materialIDOut, lightIDOut, objectIDOut);
+
+            if (objectIDOut == lightObjectID) {
+                light lt;
+                GetLightMix(lt, lightIDOut);
+                // For Every Bounce Of The Ray, We Need To Evaluate BRDF
+                rayradiance *= EvaluateBRDF(l, inRay.dir, outRay.dir, normal, mat) * costheta / lightpdf;
+                return Emit(l, lt) * rayradiance * (1.0 - MISBRDFWeight);
+            }
+        }
+
+        return 0.0;
+    }
+
+    MISBRDFWeight = MISPowerHeuristicsBeta2(BRDFpdf, lightpdf);
+    return 0.0;
+}
+
+float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint seed, in int path, inout float MISBRDFWeight, inout bool isTerminate) {
     // Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
     float radiance = 0.0;
     vec3 normal = vec3(0.0);
     float materialID = 0.0;
     float lightID = -1.0;
-    float hitdist = Intersection(inRay, normal, materialID, lightID);
+    int objectID = 0;
+    float hitdist = Intersection(inRay, normal, materialID, lightID, objectID);
     material mat;
     light lt;
     GetMaterialMix(mat, materialID);
     GetLightMix(lt, lightID);
     Ray outRay = inRay;
     if (hitdist < MAXDIST) {
-        // Calculate The Next Ray's Origin And Direction
-        outRay.origin = fma(inRay.dir, vec3(hitdist), inRay.origin);
-        outRay.dir = SampleBRDF(inRay.dir, normal, seed);
-        float BRDFpdf = BRDFPDF(outRay.dir, normal);
         // If The Ray Hits The Light Source
         if (lt.emission.y > 0.0) {
-            radiance = fma(Emit(l, lt), rayradiance, radiance);
+            radiance = Emit(l, lt) * rayradiance * MISBRDFWeight;
             // Terminate The Path If The Ray Hits The Light Source
             isTerminate = true;
             return radiance;
         }
+        // Calculate The Next Ray's Origin And Direction
+        outRay.origin = fma(inRay.dir, vec3(hitdist), inRay.origin);
+        outRay.dir = SampleBRDF(inRay.dir, normal, seed);
+        float BRDFpdf = BRDFPDF(outRay.dir, normal);
+        // Sample The Light Source Every Bounce
+        // Note: Light Source Sampling Happens 1 Bounce Prior Compared To BRDF Sampling
+        radiance = SampleLightSource(l, rayradiance, inRay, outRay, normal, mat, seed, BRDFpdf, MISBRDFWeight);
         // Evaluate The BRDF
         float costheta = dot(outRay.dir, normal);
         rayradiance *= EvaluateBRDF(l, inRay.dir, outRay.dir, normal, mat) * costheta / BRDFpdf;
@@ -1094,9 +1272,10 @@ float TracePath(in float l, in Ray ray, inout uint seed) {
     // And Calculates Light Radiance
     float radiance = 0.0;
     float rayradiance = 1.0;
+    float MISBRDFWeight = 1.0;
     bool isTerminate = false;
     for (int i = 0; i < pathLength; i++) {
-        radiance += TraceRay(l, rayradiance, ray, seed, isTerminate);
+        radiance += TraceRay(l, rayradiance, ray, seed, i, MISBRDFWeight, isTerminate);
         if (isTerminate) {
             break;
         }
@@ -1120,7 +1299,7 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
         int isOutside = 1;
         float materialID = 0.0;
         float lightID = -1.0;
-        LensIntersection(ray, object, hitdist, normal, isOutside, materialID, lightID);
+        bool isIntersect = LensIntersection(ray, object, hitdist, normal, isOutside, materialID, lightID);
         // Calculate The Refractive Index
         float n1 = 1.0;
         float n2 = 1.0;
