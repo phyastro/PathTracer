@@ -781,6 +781,7 @@ void SphereTracing(in Ray ray, inout float hitdist, inout vec3 normal, inout flo
     float previousRadius = 0.0;
     vec3 p = ray.origin;
     vec3 invdir = 1.0 / ray.dir;
+    int points = 0;
 
     vec2 tMinMax = vec2(MAXDIST);
     uint set1 = 0;
@@ -817,6 +818,11 @@ void SphereTracing(in Ray ray, inout float hitdist, inout vec3 normal, inout flo
 
         // Bounding Box Check
         if (t > tMinMax.y) {
+            points += 1;
+        } else {
+            points = 0;
+        }
+        if (points >= 2) {
             t = tMinMax.y + 1e-3;
             tMinMax = vec2(MAXDIST);
             if (SearchSDF(fma(ray.dir, vec3(t), ray.origin), invdir, tMinMax, set1, set2, set3, set4)) {
@@ -844,7 +850,8 @@ void SphereTracing(in Ray ray, inout float hitdist, inout vec3 normal, inout flo
     }
 
     if (t < hitdist) {
-        hitdist = t;
+        hitdist = t - 1e-3;
+        p = fma(ray.dir, vec3(t), ray.origin);
         normal = CalculateNumericalSDFNormals(p, set1, set2, set3, set4);
         materialID = SDFMATERIAL(p, set1, set2, set3, set4);
         lightID = -1.0;
@@ -941,7 +948,7 @@ void PCG32(inout uint seed) {
     seed = (word >> 22u) ^ word;
 }
 
-float RandomFloat(inout uint seed) {
+float RandomFloatPCG32(inout uint seed) {
     PCG32(seed);
     return float(seed) / 0xFFFFFFFFu;
 }
@@ -958,20 +965,27 @@ uint GenerateSeed(in uvec2 xy, in int k) {
     return seed;
 }
 
-float SampleSpectra(in float start, in float end, in float rand) {
+float SampleHeroWavelength(in float l_min, in float l_max, inout uint seed) {
     // Uniform Inverted CDF For Sampling
-    return (end - start) * rand + start;
+    return mix(l_min, l_max, RandomFloatPCG32(seed));
 }
 
-float InverseSpectraPDF(in float start, in float end) {
+float InverseSampleWavelengthPDF(in float l_min, in float l_max) {
     // Inverse Of Uniform PDF
-    return end - start;
+    return l_max - l_min;
+}
+
+// https://cgg.mff.cuni.cz/wp-content/uploads/2021/05/WNDWH14HWSS.pdf
+vec4 SampleWavelengths(in float l_h) {
+    // Generate Wavelengths By Applying Rotation Function On Hero Wavelength
+    return 390.0 + mod(l_h - 390.0 + 0.25 * vec4(1.0, 2.0, 3.0, 4.0) * 330.0, 330.0);
 }
 
 vec2 SampleUniformUnitDisk(inout uint seed) {
     // Samples Uniformly Distributed Random Points On Unit Disk
-    float phi = 2.0 * PI * RandomFloat(seed);
-    float d = sqrt(RandomFloat(seed));
+    vec2 random = vec2(RandomFloatPCG32(seed), RandomFloatPCG32(seed));
+    float phi = 2.0 * PI * random.y;
+    float d = sqrt(random.x);
     return d * vec2(cos(phi), sin(phi));
 }
 
@@ -980,8 +994,9 @@ vec3 SampleUniformUnitSphere(inout uint seed) {
     // XYZ Coordinates Is Calculated Based On Longitude And Latitude
     // Longitude Is Generated Uniformly And Sin Of Latitude Is Generated Uniformly
     // Reason: If We Generate Latitude Uniformly, The Top And Bottom Of The Sphere Will Have More Points Than Other Regions
-    float phi = 2.0 * PI * RandomFloat(seed);
-    float sinTheta = 2.0 * RandomFloat(seed) - 1.0;
+    vec2 random = vec2(RandomFloatPCG32(seed), RandomFloatPCG32(seed));
+    float phi = 2.0 * PI * random.y;
+    float sinTheta = 2.0 * random.x - 1.0;
     float cosTheta = sqrt(fma(-sinTheta, sinTheta, 1.0));
     float x = cos(phi) * cosTheta;
     float y = sin(phi) * cosTheta;
@@ -1004,9 +1019,10 @@ float CosineDirectionPDF(in float cosTheta) {
 
 vec3 SampleCosineUnitCone(inout uint seed, in float cosThetaMax) {
     // Sampling Directions In Cone In Cosine Distribution
+    vec2 random = vec2(RandomFloatPCG32(seed), RandomFloatPCG32(seed));
     float cosAlphaMax = 2.0 * cosThetaMax * cosThetaMax - 1.0;
-    float phi = 2.0 * PI * RandomFloat(seed);
-    float cosTheta = (1.0 - cosAlphaMax) * RandomFloat(seed) + cosAlphaMax;
+    float phi = 2.0 * PI * random.y;
+    float cosTheta = (1.0 - cosAlphaMax) * random.x + cosAlphaMax;
     float sinTheta = sqrt(fma(-cosTheta, cosTheta, 1.0));
     float x = cos(phi) * sinTheta;
     float y = sin(phi) * sinTheta;
@@ -1019,19 +1035,19 @@ float CosineUnitConePDF(in float cosTheta, in float cosThetaMax) {
     return cosTheta / (PI * (1.0 - cosThetaMax * cosThetaMax));
 }
 
-float SpectralPowerDistribution(in float l, in float l_peak, in float d, in int invert) {
+vec4 SpectralPowerDistribution(in vec4 l, in float l_peak, in float d, in int invert) {
     // Spectral Power Distribution Function Calculated On The Basis Of Peak Wavelength And Standard Deviation
     // Using Gaussian Function To Predict Spectral Radiance
     // In Reality, Spectral Radiance Function Has Different Shapes For Different Objects Also Looks Much Different Than This
-    float x = (l - l_peak) / (2.0 * d * d);
-    float radiance = exp(-x * x);
+    vec4 x = (l - l_peak) / (2.0 * d * d);
+    vec4 radiance = exp(-x * x);
     radiance = mix(radiance, 1.0 - radiance, invert);
     return radiance;
 }
 
-float BlackBodyRadiation(in float l, in float T) {
+vec4 BlackBodyRadiation(in vec4 l, in float T) {
     // Plank's Law
-    return (1.1910429724e-16 * pow(l, -5.0)) / (exp(0.014387768775 / (l * T)) - 1.0);
+    return (1.1910429724e-16 * pow(l, vec4(-5.0))) / (exp(0.014387768775 / (l * T)) - 1.0);
 }
 
 float BlackBodyRadiationPeak(in float T) {
@@ -1039,10 +1055,10 @@ float BlackBodyRadiationPeak(in float T) {
     return 4.0956746759e-6 * pow(T, 5.0);
 }
 
-float Emit(in float l, in light lt) {
+vec4 Emit(in vec4 l, in light lt) {
     // Calculates Light Emittance Based On Given Material
     float temperature = max(lt.emission.x, 0.0);
-    float lightEmission = (BlackBodyRadiation(l * 1e-9, temperature) / BlackBodyRadiationPeak(temperature)) * max(lt.emission.y, 0.0);
+    vec4 lightEmission = (BlackBodyRadiation(l * 1e-9, temperature) / BlackBodyRadiationPeak(temperature)) * max(lt.emission.y, 0.0);
     return lightEmission;
 }
 
@@ -1064,10 +1080,10 @@ float RefractiveIndexBK7Glass(in float l) {
     return sqrt(n2);
 }
 
-float EvaluateBRDF(in float l, in vec3 inDir, in vec3 outDir, in vec3 normal, in material mat) {
+vec4 EvaluateBRDF(in vec4 l, in vec3 inDir, in vec3 outDir, in vec3 normal, in material mat) {
     // Evaluate The BRDF
     // Lambertian BRDF For Diffuse Surface
-    float diffuse = SpectralPowerDistribution(l, mat.reflection.x, mat.reflection.y, int(mat.reflection.z)) / PI;
+    vec4 diffuse = SpectralPowerDistribution(l, mat.reflection.x, mat.reflection.y, int(mat.reflection.z)) / PI;
     return diffuse;
 }
 
@@ -1112,7 +1128,7 @@ vec3 ToWorld(in vec3 v, in vec3 n) {
 
 int SampleRandomLightSource(inout uint seed, inout float boundingRadius, inout vec3 pos) {
     // Samples Random Light Source Out Of Existing Light Sources
-    int randomLight = int(floor(RandomFloat(seed) * numObjects[6]));
+    int randomLight = int(floor(RandomFloatPCG32(seed) * numObjects[6]));
     int randomLightID = int(lightIDs[randomLight]);
     int offset = 0;
 
@@ -1174,7 +1190,7 @@ float MISPowerHeuristicsBeta2(in float pdf1, in float pdf2) {
     return pdf1 * pdf1 / (pdf1 * pdf1 + pdf2 * pdf2);
 }
 
-float SampleLightSource(in float l, in float rayradiance, in Ray inRay, in Ray outRay, in vec3 normal, in material mat, inout uint seed, in float BRDFpdf, inout float MISBRDFWeight) {
+vec4 SampleLightSource(in vec4 l, in vec4 rayradiance, in Ray inRay, in Ray outRay, in vec3 normal, in material mat, inout uint seed, in float BRDFpdf, inout float MISBRDFWeight) {
     // Sample Light Source Method
     // Samples The Rays Towards The Light Source
     float boundingRadius = 0.0;
@@ -1211,16 +1227,16 @@ float SampleLightSource(in float l, in float rayradiance, in Ray inRay, in Ray o
             }
         }
 
-        return 0.0;
+        return vec4(0.0);
     }
 
     MISBRDFWeight = MISPowerHeuristicsBeta2(BRDFpdf, lightpdf);
-    return 0.0;
+    return vec4(0.0);
 }
 
-float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint seed, in int path, inout float MISBRDFWeight, inout bool isTerminate) {
+vec4 TraceRay(in vec4 l, inout vec4 rayradiance, inout Ray inRay, inout uint seed, in int path, inout float MISBRDFWeight, inout bool isTerminate) {
     // Traces A Ray Along The Given Origin And Direction Then Calculates Light Interactions
-    float radiance = 0.0;
+    vec4 radiance = vec4(0.0);
     vec3 normal = vec3(0.0);
     float materialID = 0.0;
     float lightID = -1.0;
@@ -1251,8 +1267,8 @@ float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint 
         rayradiance *= EvaluateBRDF(l, inRay.dir, outRay.dir, normal, mat) * costheta / BRDFpdf;
         // Russian Roulette
         // Probability Of The Ray Can Be Anything From 0 To 1
-        float rayProbability = clamp(rayradiance, 0.0, 0.99);
-        if (RandomFloat(seed) > rayProbability) {
+        float rayProbability = clamp(0.5 * sqrt(dot(rayradiance, rayradiance)), 0.0, 0.99);
+        if (RandomFloatPCG32(seed) > rayProbability) {
             // Randomly Terminate Ray Based On Probability
             isTerminate = true;
             return radiance;
@@ -1267,11 +1283,11 @@ float TraceRay(in float l, inout float rayradiance, inout Ray inRay, inout uint 
     return radiance;
 }
 
-float TracePath(in float l, in Ray ray, inout uint seed) {
+vec4 TracePath(in vec4 l, in Ray ray, inout uint seed) {
     // Traces A Path Starting From The Given Origin And Direction
     // And Calculates Light Radiance
-    float radiance = 0.0;
-    float rayradiance = 1.0;
+    vec4 radiance = vec4(0.0);
+    vec4 rayradiance = vec4(1.0);
     float MISBRDFWeight = 1.0;
     bool isTerminate = false;
     for (int i = 0; i < pathLength; i++) {
@@ -1323,7 +1339,7 @@ void TracePathLens(in float l, inout Ray ray, in vec3 forwardDir) {
 vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
     uint seed = GenerateSeed(xy, k);
     // SSAA
-    uv += vec2(2.0 * RandomFloat(seed) - 0.5, 2.0 * RandomFloat(seed) - 0.5) / resolution;
+    uv += vec2(2.0 * RandomFloatPCG32(seed) - 0.5, 2.0 * RandomFloatPCG32(seed) - 0.5) / resolution;
 
     // This Is A Simple Camera Made Up Of A BiConvex Lens And An Aperture
     // Ray Originates From The Pixel Of Camera Sensor
@@ -1338,14 +1354,29 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
     vec3 pointOnAperture = cameraPos + (vec3(0.5 * apertureSize * SampleUniformUnitDisk(seed), apertureDist) * matrix);
     // Compute Random Direction Which Passes Through The Area Of Aperture From Camera Sensor
     ray.dir = normalize(pointOnAperture - ray.origin);
+    // Forward Direction For The Camera
+    vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
 
     vec3 color = vec3(0.0);
-
-    float l = SampleSpectra(390.0, 720.0, RandomFloat(seed));
-    vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
-    // Ray Passes Through The Lens Here
-    TracePathLens(l, ray, forwardDir);
-    color += TracePath(l, ray, seed) * WaveToLMS(l) * InverseSpectraPDF(390.0, 720.0);
+    float l_h = SampleHeroWavelength(390.0, 720.0, seed);
+    // Trace Ray Through The Lens
+    TracePathLens(l_h, ray, forwardDir);
+    vec4 l = SampleWavelengths(l_h);
+    // Reciprocal Of Number Of Wavelengths Per Ray
+    float invNuml = 0.25;
+    // Trace Path In The Scene
+    vec4 radiance = TracePath(l, ray, seed);
+    color += (radiance.x * WaveToLMS(l.x) + radiance.y * WaveToLMS(l.y) + radiance.z * WaveToLMS(l.z) + radiance.w * WaveToLMS(l.w)) * InverseSampleWavelengthPDF(390.0, 720.0) * invNuml;
+    // Don't Include NaN Values
+    if (color.x != color.x) {
+        return vec3(0.0);
+    }
+    if (color.y != color.y) {
+        return vec3(0.0);
+    }
+    if (color.z != color.z) {
+        return vec3(0.0);
+    }
 
     return color;
 }
