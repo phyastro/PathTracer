@@ -178,6 +178,11 @@ struct Camera {
 	float lensDistance;
 };
 
+struct CameraShot {
+    glm::vec3 pos;
+    glm::vec2 angle;
+};
+
 struct UniformBufferObject {
 	float numObjects[7];
 	float packedObjects[MAX_OBJECTS_SIZE];
@@ -1118,6 +1123,7 @@ private:
 	bool isSaveSDF = false;
 
 	Camera camera{};
+	std::vector<CameraShot> cameraShots;
 	std::vector<sphere> spheres;
 	std::vector<plane> planes;
 	std::vector<box> boxes;
@@ -1128,6 +1134,7 @@ private:
 	std::vector<light> lights;
 
 	bool isImGuiWindowFocused = false;
+	int shotSelection = 0;
 	int objectSelection = 0;
 	int sdfSelection = 0;
 	int materialSelection = 0;
@@ -2626,12 +2633,22 @@ private:
 	}
 
 	void UpdateFromJSON() {
-		camera.pos.x = scene["camera"]["position"][0];
-		camera.pos.y = scene["camera"]["position"][1];
-		camera.pos.z = scene["camera"]["position"][2];
+	    cameraShots.resize(scene["camera"]["numShots"]);
+	    for (int i = 0; i < scene["camera"]["numShots"]; i++) {
+			cameraShots[i].pos.x = scene["camera"]["position"][i][0];
+    		cameraShots[i].pos.y = scene["camera"]["position"][i][1];
+    		cameraShots[i].pos.z = scene["camera"]["position"][i][2];
 
-		camera.angle.x = scene["camera"]["angle"][0];
-		camera.angle.y = scene["camera"]["angle"][1];
+    		cameraShots[i].angle.x = scene["camera"]["angle"][i][0];
+    		cameraShots[i].angle.y = scene["camera"]["angle"][i][1];
+		}
+
+		camera.pos.x = cameraShots[0].pos.x;
+		camera.pos.y = cameraShots[0].pos.y;
+		camera.pos.z = cameraShots[0].pos.z;
+
+		camera.angle.x = cameraShots[0].angle.x;
+		camera.angle.y = cameraShots[0].angle.y;
 
 		camera.ISO = scene["camera"]["ISO"];
 
@@ -2766,12 +2783,16 @@ private:
 	void UpdateToJSON() {
 		scene = nlohmann::ordered_json();
 
-		scene["camera"]["position"][0] = RoundDecimal((double)camera.pos.x, 1e5);
-		scene["camera"]["position"][1] = RoundDecimal((double)camera.pos.y, 1e5);
-		scene["camera"]["position"][2] = RoundDecimal((double)camera.pos.z, 1e5);
+		scene["camera"]["numShots"] = cameraShots.size();
 
-		scene["camera"]["angle"][0] = RoundDecimal((double)camera.angle.x, 1e5);
-		scene["camera"]["angle"][1] = RoundDecimal((double)camera.angle.y, 1e5);
+		for (int i = 0; i < cameraShots.size(); i++) {
+    		scene["camera"]["position"][i][0] = RoundDecimal((double)cameraShots[i].pos.x, 1e5);
+    		scene["camera"]["position"][i][1] = RoundDecimal((double)cameraShots[i].pos.y, 1e5);
+    		scene["camera"]["position"][i][2] = RoundDecimal((double)cameraShots[i].pos.z, 1e5);
+
+    		scene["camera"]["angle"][i][0] = RoundDecimal((double)cameraShots[i].angle.x, 1e5);
+    		scene["camera"]["angle"][i][1] = RoundDecimal((double)cameraShots[i].angle.y, 1e5);
+		}
 
 		scene["camera"]["ISO"] = camera.ISO;
 
@@ -3049,6 +3070,44 @@ float sdfmaterial(in vec3 p)
 				isReset |= ImGui::DragFloat("Focal Length", &camera.lensFocalLength, 0.0005f, 0.0005f, 10.0f, "%0.4f");
 				isReset |= ImGui::DragFloat("Thickness", &camera.lensThickness, 0.0005f, 0.0f, 1.0f, "%0.4f");
 				isReset |= ImGui::DragFloat("Distance", &camera.lensDistance, 0.001f, 0.001f, 100.0f, "%0.3f");
+			}
+			ImGui::Separator();
+
+			if (ImGui::CollapsingHeader("Camera Shot")) {
+			    int numShots = (int)cameraShots.size();
+
+    			if (ImGui::BeginTable("Camera Shots Table", 1)) {
+    				ImGui::TableSetupColumn("Camera Shots");
+    				ImGui::TableHeadersRow();
+    				ItemsTable("Camera Shot ", shotSelection, 0, numShots, true);
+    				ImGui::EndTable();
+    			}
+    			ImGui::Separator();
+
+			    if (ImGui::Button("Load Camera Shot", ImVec2(303, 0))) {
+					if (numShots > 0) {
+    					isReset = true;
+    					camera.pos = cameraShots[shotSelection].pos;
+    					camera.angle = cameraShots[shotSelection].angle;
+					}
+				}
+
+				if (ImGui::Button("Add Camera Shot", ImVec2(303, 0))) {
+				    CameraShot shot;
+					shot.pos = camera.pos;
+					shot.angle = camera.angle;
+				    cameraShots.push_back(shot);
+				}
+
+				if (ImGui::Button("Delete Camera Shot", ImVec2(303, 0))) {
+					int id = shotSelection;
+					if (IsInRange(id, 0, numShots - 1)) {
+						cameraShots.erase(std::next(cameraShots.begin(), id));
+						if (shotSelection > 0) {
+							shotSelection--;
+						}
+					}
+				}
 			}
 			ImGui::Separator();
 

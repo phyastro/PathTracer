@@ -1,13 +1,18 @@
 {
     "camera": {
+        "numShots": 1,
         "position": [
-            2.3952,
-            1.5063,
-            -5.59841
+            [
+                1.21185,
+                1.83228,
+                2.65861
+            ]
         ],
         "angle": [
-            206.43723,
-            -27.49999
+            [
+                231.37442,
+                -17.62298
+            ]
         ],
         "ISO": 1600,
         "size": 0.057,
@@ -21,18 +26,8 @@
     "sphere": [
         {
             "position": [
-                0.0,
-                1.0,
-                0.0
-            ],
-            "radius": 1.0,
-            "materialID": 1,
-            "lightID": 0
-        },
-        {
-            "position": [
                 5.0,
-                1.0,
+                3.0,
                 -1.0
             ],
             "radius": 1.0,
@@ -41,12 +36,12 @@
         },
         {
             "position": [
-                0.0,
-                4.0,
+                0.4,
+                1.0,
                 -3.0
             ],
             "radius": 1.0,
-            "materialID": 2,
+            "materialID": 1,
             "lightID": 1
         }
     ],
@@ -55,6 +50,15 @@
             "position": [
                 0.0,
                 0.0,
+                0.0
+            ],
+            "materialID": 1,
+            "lightID": 0
+        },
+        {
+            "position": [
+                0.0,
+                4.0,
                 0.0
             ],
             "materialID": 1,
@@ -78,8 +82,27 @@
                 1.5,
                 1.5
             ],
-            "materialID": 1,
+            "materialID": 4,
             "lightID": 0
+        },
+        {
+            "position": [
+                2.29,
+                2.69,
+                0.0
+            ],
+            "rotation": [
+                -31.2,
+                -34.2,
+                14.1
+            ],
+            "size": [
+                1.0,
+                2.23,
+                0.49
+            ],
+            "materialID": 1,
+            "lightID": 2
         }
     ],
     "lens": [
@@ -105,13 +128,13 @@
     "cyclide": [
         {
             "position": [
-                -2.0,
-                1.05,
-                -3.0
+                -0.5,
+                3.27,
+                -2.7
             ],
             "rotation": [
                 0.0,
-                0.0,
+                -9.6,
                 0.0
             ],
             "scale": [
@@ -131,16 +154,16 @@
     "sdf": [
         {
             "position": [
-                2.0,
+                -1.0,
                 1.0,
-                -7.0
+                1.0
             ],
             "boundingSize": [
                 2.0,
                 2.0,
                 2.0
             ],
-            "glsl": "// Mandelbulb 3D\r\n// http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/\r\nfloat sdf(in vec3 p)\r\n{\r\n    vec3 z = p;\r\n    float r = length(z);\r\n    float dr = 1.0;\r\n\r\n    for (int i = 0; i < 4; i++) {\r\n        // Differentiate f_n(c) w.r.t c\r\n        // Scalar Derivative\r\n        dr = 8.0 * pow(r, 7.0) * dr + 1.0;\r\n\r\n        float invr = 1.0 / r;\r\n        float invl = inversesqrt(dot(vec2(z.x, z.z), vec2(z.x, z.z)));\r\n        r *= r;\r\n        r *= r;\r\n        r *= r;\r\n\r\n        // f_n(c) = f_n-1(c)^8 + c\r\n        // Using Chebyshev Polynomials\r\n        // Faster Than Inverse Trigonometric Functions\r\n        float cost = z.z * invl;\r\n        float cosp = z.y * invr;\r\n        float sint = z.x * invl;\r\n        float sinp = invr / invl;\r\n        float cost2 = cost * cost;\r\n        float cosp2 = cosp * cosp;\r\n        float cost8 = fma(fma(fma(fma(128.0, cost2, -256.0), cost2, 160.0), cost2, -32.0), cost2, 1.0);\r\n        float cosp8 = fma(fma(fma(fma(128.0, cosp2, -256.0), cosp2, 160.0), cosp2, -32.0), cosp2, 1.0);\r\n        float sint8 = fma(fma(fma(128.0, cost2, -192.0), cost2, 80.0), cost2, -8.0) * sint * cost;\r\n        float sinp8 = fma(fma(fma(128.0, cosp2, -192.0), cosp2, 80.0), cosp2, -8.0) * sinp * cosp;\r\n        z = r * vec3(sint8 * sinp8, cosp8, cost8 * sinp8);\r\n        z += p;\r\n\r\n        // f_n(c) = f_n-1(c)^8 + c\r\n        // Using Inverse Trigonometric Functions\r\n        // For Some Reason acos Is Much Faster Than atan For Me\r\n        //float theta = 8.0 * acos(z.z * invl);\r\n        //float phi = 8.0 * acos(z.y * invr);\r\n        //z = r * vec3(sin(theta) * sin(phi), cos(phi), cos(theta) * sin(phi)) + p;\r\n        r = length(z);\r\n\r\n        // This Is Placed At Bottom Otherwise We Waste The Last Iteration Calculation\r\n        if (r > 16.0) {\r\n            break;\r\n        }\r\n    }\r\n\r\n    // DE Approximation\r\n    return 0.5 * log(r) * r / dr;\r\n}\r\n\r\nfloat sdfmaterial(in vec3 p)\r\n{\r\n    float factor = dot(p, p);\r\n    return mix(3.0, 2.0, factor / (0.8 + factor));\r\n}\r\n"
+            "glsl": "// Mandelbulb 3D\r\n// http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/\r\nfloat sdf(in vec3 p)\r\n{\r\n    vec3 z = p;\r\n    float r = length(z);\r\n    float dr = 1.0;\r\n\r\n    for (int i = 0; i < 4; i++) {\r\n        // Differentiate f_n(c) w.r.t c\r\n        // Scalar Derivative\r\n        dr = 8.0 * pow(r, 7.0) * dr + 1.0;\r\n\r\n        float invr = 1.0 / r;\r\n        float invl = inversesqrt(dot(vec2(z.x, z.z), vec2(z.x, z.z)));\r\n        r *= r;\r\n        r *= r;\r\n        r *= r;\r\n\r\n        // f_n(c) = f_n-1(c)^8 + c\r\n        // Using Chebyshev Polynomials\r\n        // Faster Than Inverse Trigonometric Functions\r\n        float cost = z.z * invl;\r\n        float cosp = z.y * invr;\r\n        float sint = z.x * invl;\r\n        float sinp = invr / invl;\r\n        float cost2 = cost * cost;\r\n        float cosp2 = cosp * cosp;\r\n        float cost8 = fma(fma(fma(fma(128.0, cost2, -256.0), cost2, 160.0), cost2, -32.0), cost2, 1.0);\r\n        float cosp8 = fma(fma(fma(fma(128.0, cosp2, -256.0), cosp2, 160.0), cosp2, -32.0), cosp2, 1.0);\r\n        float sint8 = fma(fma(fma(128.0, cost2, -192.0), cost2, 80.0), cost2, -8.0) * sint * cost;\r\n        float sinp8 = fma(fma(fma(128.0, cosp2, -192.0), cosp2, 80.0), cosp2, -8.0) * sinp * cosp;\r\n        z = r * vec3(sint8 * sinp8, cosp8, cost8 * sinp8);\r\n        z += p;\r\n\r\n        // f_n(c) = f_n-1(c)^8 + c\r\n        // Using Inverse Trigonometric Functions\r\n        // For Some Reason acos Is Much Faster Than atan For Me\r\n        //float theta = 8.0 * acos(z.z * invl);\r\n        //float phi = 8.0 * acos(z.y * invr);\r\n        //z = r * vec3(sin(theta) * sin(phi), cos(phi), cos(theta) * sin(phi)) + p;\r\n        r = length(z);\r\n\r\n        // This Is Placed At Bottom Otherwise We Waste The Last Iteration Calculation\r\n        if (r > 16.0) {\r\n            break;\r\n        }\r\n    }\r\n\r\n    // DE Approximation\r\n    return 0.5 * log(r) * r / dr;\r\n}\r\n\r\nfloat sdfmaterial(in vec3 p)\r\n{\r\n    float factor = dot(p, p);\r\n    return mix(5.0, 4.0, factor / (0.8 + factor));\r\n}\r\n"
         }
     ],
     "material": [
@@ -160,15 +183,29 @@
         },
         {
             "reflection": {
-                "peakWavelength": 501.0,
-                "sigma": 7.5,
+                "peakWavelength": 650.0,
+                "sigma": 5.0,
                 "isInvert": false
             }
         },
         {
             "reflection": {
-                "peakWavelength": 716.0,
-                "sigma": 5.5,
+                "peakWavelength": 591.0,
+                "sigma": 5.0,
+                "isInvert": false
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 462.0,
+                "sigma": 6.0,
+                "isInvert": false
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 694.0,
+                "sigma": 7.0,
                 "isInvert": false
             }
         }
@@ -177,7 +214,13 @@
         {
             "emission": {
                 "temperature": 5500.0,
-                "luminosity": 12.5
+                "luminosity": 4.0
+            }
+        },
+        {
+            "emission": {
+                "temperature": 2280.0,
+                "luminosity": 5.0
             }
         }
     ]
