@@ -1,0 +1,208 @@
+{
+    "camera": {
+        "numShots": 5,
+        "position": [
+            [
+                6.332,
+                3.855,
+                3.14
+            ],
+            [
+                2.42391,
+                2.91682,
+                -2.40064
+            ],
+            [
+                0.61055,
+                3.58956,
+                -0.58295
+            ],
+            [
+                0.34909,
+                2.10183,
+                -0.33625
+            ],
+            [
+                -0.69029,
+                2.49023,
+                -0.21211
+            ]
+        ],
+        "angle": [
+            [
+                225.093,
+                -31.512
+            ],
+            [
+                314.53043,
+                -32.01199
+            ],
+            [
+                313.12424,
+                -69.99995
+            ],
+            [
+                315.09302,
+                -26.99995
+            ],
+            [
+                80.24936,
+                -43.50002
+            ]
+        ],
+        "ISO": 1600,
+        "size": 0.057,
+        "apertureSize": 0.0025,
+        "apertureDistance": 0.049,
+        "lensRadius": 0.01,
+        "lensFocalLength": 0.03,
+        "lensThickness": 0.0,
+        "lensDistance": 0.05
+    },
+    "sphere": [
+        {
+            "position": [
+                5.0,
+                1.0,
+                -1.0
+            ],
+            "radius": 1.0,
+            "materialID": 2,
+            "lightID": 0
+        },
+        {
+            "position": [
+                0.0,
+                4.0,
+                -3.0
+            ],
+            "radius": 1.0,
+            "materialID": 1,
+            "lightID": 1
+        }
+    ],
+    "plane": [
+        {
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "materialID": 1,
+            "lightID": 0
+        }
+    ],
+    "box": [
+        {
+            "position": [
+                3.0,
+                0.75,
+                1.0
+            ],
+            "rotation": [
+                0.0,
+                58.31,
+                0.0
+            ],
+            "size": [
+                1.5,
+                1.5,
+                1.5
+            ],
+            "materialID": 1,
+            "lightID": 0
+        }
+    ],
+    "lens": [
+        {
+            "position": [
+                5.0,
+                1.2,
+                -4.0
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "radius": 1.2,
+            "focalLength": 1.0,
+            "thickness": 0.0,
+            "isConverging": true,
+            "materialID": 1,
+            "lightID": 0
+        }
+    ],
+    "cyclide": [
+        {
+            "position": [
+                -2.0,
+                1.05,
+                -3.0
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "scale": [
+                0.25,
+                0.25,
+                0.25
+            ],
+            "a": 3.36,
+            "b": -3.17,
+            "c": -1.06,
+            "d": -1.5,
+            "boundingRadius": 6.0,
+            "materialID": 3,
+            "lightID": 0
+        }
+    ],
+    "sdf": [
+        {
+            "position": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "boundingSize": [
+                2.0,
+                2.0,
+                2.0
+            ],
+            "glsl": "// https://iquilezles.org/articles/menger/\r\nfloat sdf(in vec3 p)\r\n{\r\n    vec3 q = abs(p) - vec3(1.0);\r\n    float d = length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);\r\n\r\n    float s = 1.0;\r\n    for (int m = 0; m < 5; m++)\r\n    {\r\n        vec3 a = mod(p * s, 2.0) - 1.0;\r\n        s *= 3.0;\r\n        vec3 r = abs(1.0 - 3.0 * abs(a));\r\n\r\n        float da = max(r.x, r.y);\r\n        float db = max(r.y, r.z);\r\n        float dc = max(r.z, r.x);\r\n        float c = (min(da, min(db, dc)) - 1.0) / s;\r\n\r\n        d = max(d, c);\r\n    }\r\n\r\n    return d;\r\n}\r\n\r\nfloat sdfmaterial(in vec3 p)\r\n{\r\n    return 0.0;\r\n}\r\n"
+        }
+    ],
+    "material": [
+        {
+            "reflection": {
+                "peakWavelength": 550.0,
+                "sigma": 100.0,
+                "isInvert": false
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 470.0,
+                "sigma": 6.0,
+                "isInvert": false
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 650.0,
+                "sigma": 5.0,
+                "isInvert": false
+            }
+        }
+    ],
+    "light": [
+        {
+            "emission": {
+                "temperature": 5500.0,
+                "luminosity": 12.5
+            }
+        }
+    ]
+}
