@@ -31,6 +31,7 @@ const unsigned int WIDTH = 1280;
 const unsigned int HEIGHT = 720;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 const bool OFFSCREENRENDER = false;
+const float MINFRAMETIME = 0.0f;
 const int TONEMAP = 3; // 0 - None,  1 - Reinhard, 2 - ACES Film, 3 - DEUCES
 
 #define DEBUGMODE
@@ -966,7 +967,30 @@ float BlackBodyRadiationPeak(float T) {
 	return 4.0956746759e-6f * pow(T, 5.0f);
 }
 
+// http://www.brucelindbloom.com/Eqn_ChromAdapt.html
+glm::vec3 IlluminantEToD65(glm::vec3 XYZ) {
+    // Bradford Chromatic Adaptation From Reference White Illuminant E To Illuminant D65
+    glm::mat3 m = glm::mat3(0.9531874, -0.0265906, 0.0238731,
+            -0.0382467, 1.0288406, 0.0094060,
+            0.0026068, -0.0030332, 1.0892565);
+    return XYZ * m;
+}
+
+// http://www.brucelindbloom.com/Eqn_RGB_XYZ_Matrix.html
+glm::vec3 XYZToRGB(glm::vec3 XYZ) {
+    // Transformation From XYZ To sRGB Color Space With Illuminant D65 As Reference White
+    glm::mat3 m = glm::mat3(3.2404542, -1.5371385, -0.4985314,
+            -0.9692660, 1.8760108, 0.0415560,
+            0.0556434, -0.2040259, 1.0572252);
+    return XYZ * m;
+}
+
 float Reinhard(float x) {
+	// x / (1 + x)
+	return x / (1.0f + x);
+}
+
+glm::vec3 Reinhard(glm::vec3 x) {
 	// x / (1 + x)
 	return x / (1.0f + x);
 }
@@ -983,26 +1007,67 @@ float ACESFilm(float x) {
 	return x * (a * x + b) / (x * (c * x + d) + e);
 }
 
+// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+glm::vec3 ACESFilm(glm::vec3 x) {
+	// x(ax + b) / (x(cx + d) + e)
+	float a = 2.51f;
+	float b = 0.03f;
+	float c = 2.43f;
+	float d = 0.59f;
+	float e = 0.14f;
+
+	return x * (a * x + b) / (x * (c * x + d) + e);
+}
+
 // DEUCES Biophotometric Tonemap by Ted(Kerdek)
 float DEUCESBioPhotometric(float x) {
 	// e^(-0.25 / x)
 	return exp(-0.25f / x);
 }
 
+// DEUCES Biophotometric Tonemap by Ted(Kerdek)
+glm::vec3 DEUCESBioPhotometric(glm::vec3 x) {
+    // e^(-0.25 / x)
+    return glm::exp(-0.25f / x);
+}
+
 float tonemapping(float x, int tonemap) {
 	if (tonemap == 1) {
 		x = Reinhard(x);
 	}
-
 	if (tonemap == 2) {
 		x = ACESFilm(x);
 	}
-
 	if (tonemap == 3) {
 		x = DEUCESBioPhotometric(x);
 	}
 
 	return x;
+}
+
+glm::vec3 tonemapping(glm::vec3 x, int tonemap) {
+	if (tonemap == 1) {
+		x = Reinhard(x);
+	}
+	if (tonemap == 2) {
+		x = ACESFilm(x);
+	}
+	if (tonemap == 3) {
+		x = DEUCESBioPhotometric(x);
+	}
+
+	return x;
+}
+
+float sRGBCompanding(float x) {
+    // Companding For sRGB Displays
+    x = std::clamp(x, 0.0f, 1.0f);
+    if (x <= 0.0031308f) {
+        x = 12.92f * x;
+    } else {
+        x = 1.055f * pow(x, 1.0f / 2.4f) - 0.055f;
+    }
+    return x;
 }
 
 class App {
@@ -1068,15 +1133,6 @@ private:
 	VkFormat texelBufferFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
 	VkBufferView texelBufferView;
 
-	VkImage processorImage;
-	VkFormat processorImageFormat = VK_FORMAT_B8G8R8A8_UNORM;
-	VkDeviceMemory processorImageMemory;
-	VkImageView processorImageView;
-
-	VkImage saveImage;
-	VkFormat saveImageFormat = VK_FORMAT_B8G8R8A8_UNORM;
-	VkDeviceMemory saveImageMemory;
-
 	std::vector<VkFramebuffer> framebuffers;
 
 	VkDescriptorPool descriptorPool;
@@ -1108,19 +1164,22 @@ private:
 	int samplesPerFrame = 1;
 	int frame = 0;
 	int currentSamples = 0;
-	int numSamples = 10000;
+	int numSamples = 1000;
 	float frameTime = 0.0166f;
-	float minFrameTime = 0.0f;
+	float minFrameTime = MINFRAMETIME;
+	int cameraShotIndex = 1;
 
 	float persistence = 0.0625f;
 	int pathLength = 5;
 	int tonemap = TONEMAP;
+
 
 	nlohmann::ordered_json scene;
 	bool isLoadScene = false;
 	bool isSaveScene = false;
 	bool isLoadSDF = false;
 	bool isSaveSDF = false;
+	bool isSaveRender = false;
 
 	Camera camera{};
 	std::vector<CameraShot> cameraShots;
@@ -1658,44 +1717,27 @@ private:
 		std::vector<VkSubpassDependency> dependency{};
 		VkRenderPassCreateInfo createInfo{};
 
-		if (OFFSCREENRENDER) {
-			colorAttachments.resize(1);
-			subpass.resize(1);
-			dependency.resize(1);
-		} else {
-			colorAttachments.resize(2);
-			subpass.resize(2);
-			dependency.resize(2);
-		}
+		colorAttachments.resize(2);
+		subpass.resize(2);
+		dependency.resize(2);
 
-		if (OFFSCREENRENDER) {
-			colorAttachments[0].format = processorImageFormat;
-			colorAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-			colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			colorAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			colorAttachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			colorAttachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			colorAttachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			colorAttachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		} else {
-			colorAttachments[0].format = swapChainImageFormat;
-			colorAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-			colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			colorAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			colorAttachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			colorAttachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			colorAttachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			colorAttachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colorAttachments[0].format = swapChainImageFormat;
+		colorAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-			colorAttachments[1].format = swapChainImageFormat;
-			colorAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
-			colorAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-			colorAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			colorAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			colorAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			colorAttachments[1].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			colorAttachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		}
+		colorAttachments[1].format = swapChainImageFormat;
+		colorAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		colorAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachments[1].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colorAttachments[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
 		subpass1ColorAttachmentRefs.attachment = 0;
 		subpass1ColorAttachmentRefs.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1707,11 +1749,9 @@ private:
 		subpass[0].colorAttachmentCount = 1;
 		subpass[0].pColorAttachments = &subpass1ColorAttachmentRefs;
 
-		if (!OFFSCREENRENDER) {
-			subpass[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-			subpass[1].colorAttachmentCount = 1;
-			subpass[1].pColorAttachments = &subpass2ColorAttachmentRef;
-		}
+		subpass[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass[1].colorAttachmentCount = 1;
+		subpass[1].pColorAttachments = &subpass2ColorAttachmentRef;
 
 		dependency[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependency[0].dstSubpass = 0;
@@ -1721,15 +1761,13 @@ private:
 		dependency[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 		dependency[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		if (!OFFSCREENRENDER) {
-			dependency[1].srcSubpass = 0;
-			dependency[1].dstSubpass = 1;
-			dependency[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-			dependency[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-			dependency[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-			dependency[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-			dependency[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-		}
+		dependency[1].srcSubpass = 0;
+		dependency[1].dstSubpass = 1;
+		dependency[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		createInfo.attachmentCount = static_cast<uint32_t>(colorAttachments.size());
@@ -2213,7 +2251,7 @@ private:
 		VkDeviceSize bufferSize = W * H * 4 * 4;
 
 		CreateBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texelBuffer, texelBufferMemory);
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, texelBuffer, texelBufferMemory);
 	}
 
 	void CreateTexelBufferView() {
@@ -2230,116 +2268,13 @@ private:
 		}
 	}
 
-	void CreateImages() {
-		if (OFFSCREENRENDER) {
-			std::array<VkImageCreateInfo, 2> createInfo{};
-			std::array<VkMemoryRequirements, 2> memoryRequirements;
-			std::array<VkMemoryAllocateInfo, 2> allocateInfo{};
-
-			createInfo[0].sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-			createInfo[0].imageType = VK_IMAGE_TYPE_2D;
-			createInfo[0].extent.width = static_cast<uint32_t>(W);
-			createInfo[0].extent.height = static_cast<uint32_t>(H);
-			createInfo[0].extent.depth = 1;
-			createInfo[0].mipLevels = 1;
-			createInfo[0].arrayLayers = 1;
-			createInfo[0].format = processorImageFormat;
-			createInfo[0].tiling = VK_IMAGE_TILING_OPTIMAL;
-			createInfo[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			createInfo[0].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-			createInfo[0].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			createInfo[0].samples = VK_SAMPLE_COUNT_1_BIT;
-			createInfo[0].flags = 0;
-
-			if (vkCreateImage(device, &createInfo[0], nullptr, &processorImage) != VK_SUCCESS) {
-				throw std::runtime_error("Failed To Create Processor Image!");
-			}
-
-			vkGetImageMemoryRequirements(device, processorImage, &memoryRequirements[0]);
-
-			allocateInfo[0].sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			allocateInfo[0].allocationSize = memoryRequirements[0].size;
-			allocateInfo[0].memoryTypeIndex = FindMemoryType(memoryRequirements[0].memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-			if (vkAllocateMemory(device, &allocateInfo[0], nullptr, &processorImageMemory) != VK_SUCCESS) {
-				throw std::runtime_error("Failed To Allocate Processor Image Memory!");
-			}
-
-			vkBindImageMemory(device, processorImage, processorImageMemory, 0);
-
-			createInfo[1].sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-			createInfo[1].imageType = VK_IMAGE_TYPE_2D;
-			createInfo[1].extent.width = static_cast<uint32_t>(W);
-			createInfo[1].extent.height = static_cast<uint32_t>(H);
-			createInfo[1].extent.depth = 1;
-			createInfo[1].mipLevels = 1;
-			createInfo[1].arrayLayers = 1;
-			createInfo[1].format = saveImageFormat;
-			createInfo[1].tiling = VK_IMAGE_TILING_LINEAR;
-			createInfo[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			createInfo[1].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-			createInfo[1].sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			createInfo[1].samples = VK_SAMPLE_COUNT_1_BIT;
-			createInfo[1].flags = 0;
-
-			if (vkCreateImage(device, &createInfo[1], nullptr, &saveImage) != VK_SUCCESS) {
-				throw std::runtime_error("Failed To Create Save Image!");
-			}
-
-			vkGetImageMemoryRequirements(device, saveImage, &memoryRequirements[1]);
-
-			allocateInfo[1].sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			allocateInfo[1].allocationSize = memoryRequirements[1].size;
-			allocateInfo[1].memoryTypeIndex = FindMemoryType(memoryRequirements[1].memoryTypeBits,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-			if (vkAllocateMemory(device, &allocateInfo[1], nullptr, &saveImageMemory) != VK_SUCCESS) {
-				throw std::runtime_error("Failed To Allocate Save Image Memory!");
-			}
-
-			vkBindImageMemory(device, saveImage, saveImageMemory, 0);
-		}
-	}
-
-	void CreateImageViews() {
-		VkImageViewCreateInfo createInfo{};
-
-		if (OFFSCREENRENDER) {
-			createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			createInfo.format = processorImageFormat;
-			createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.image = processorImage;
-			createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			createInfo.subresourceRange.baseMipLevel = 0;
-			createInfo.subresourceRange.levelCount = 1;
-			createInfo.subresourceRange.baseArrayLayer = 0;
-			createInfo.subresourceRange.layerCount = 1;
-
-			if (vkCreateImageView(device, &createInfo, nullptr, &processorImageView) != VK_SUCCESS) {
-				throw std::runtime_error("Failed To Create Processor Image View!");
-			}
-		}
-	}
-
 	void CreateFramebuffers() {
-		if (OFFSCREENRENDER) {
-			framebuffers.resize(1);
-		} else {
-			framebuffers.resize(swapChainImageViews.size());
-		}
+		framebuffers.resize(swapChainImageViews.size());
 
 		for (size_t i = 0; i < framebuffers.size(); i++) {
 			std::vector<VkImageView> attachments;
-			if (OFFSCREENRENDER) {
-				attachments.push_back(processorImageView);
-			} else {
-				attachments.push_back(swapChainImageViews[i]);
-				attachments.push_back(swapChainImageViews[i]);
-			}
+			attachments.push_back(swapChainImageViews[i]);
+			attachments.push_back(swapChainImageViews[i]);
 
 			VkFramebufferCreateInfo createInfo{};
 			createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -2446,8 +2381,10 @@ private:
 		allocateInfo[1].level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		allocateInfo[1].commandBufferCount = static_cast<uint32_t>(computeCommandBuffers.size());
 
-		if (vkAllocateCommandBuffers(device, &allocateInfo[0], graphicsCommandBuffers.data()) != VK_SUCCESS) {
-			throw std::runtime_error("Failed To Allocate Graphics Command Buffers!");
+		if (!OFFSCREENRENDER) {
+		    if (vkAllocateCommandBuffers(device, &allocateInfo[0], graphicsCommandBuffers.data()) != VK_SUCCESS) {
+		    	throw std::runtime_error("Failed To Allocate Graphics Command Buffers!");
+		    }
 		}
 
 		if (vkAllocateCommandBuffers(device, &allocateInfo[1], computeCommandBuffers.data()) != VK_SUCCESS) {
@@ -2493,20 +2430,24 @@ private:
 		if (!OFFSCREENRENDER) {
 			CreateSwapChain();
 			CreateSwapChainImageViews();
+			CreateRenderPass();
 		}
-		CreateRenderPass();
 		CreateDescriptorSetLayout();
-		CreateGraphicsPipeline();
+		if (!OFFSCREENRENDER) {
+		    CreateGraphicsPipeline();
+		}
 		CreateComputePipeline();
 		CreateCommandPool();
-		CreateVertexBuffer();
-		CreateIndexBuffer();
+		if (!OFFSCREENRENDER) {
+	       	CreateVertexBuffer();
+		    CreateIndexBuffer();
+		}
 		CreateUniformBuffer();
 		CreateTexelBuffer();
 		CreateTexelBufferView();
-		CreateImages();
-		CreateImageViews();
-		CreateFramebuffers();
+		if (!OFFSCREENRENDER) {
+		    CreateFramebuffers();
+		}
 		CreateDescriptorPool();
 		CreateDescriptorSet();
 		CreateCommandBuffer();
@@ -2643,12 +2584,12 @@ private:
     		cameraShots[i].angle.y = scene["camera"]["angle"][i][1];
 		}
 
-		camera.pos.x = cameraShots[0].pos.x;
-		camera.pos.y = cameraShots[0].pos.y;
-		camera.pos.z = cameraShots[0].pos.z;
+		camera.pos.x = cameraShots[cameraShotIndex - 1].pos.x;
+		camera.pos.y = cameraShots[cameraShotIndex - 1].pos.y;
+		camera.pos.z = cameraShots[cameraShotIndex - 1].pos.z;
 
-		camera.angle.x = cameraShots[0].angle.x;
-		camera.angle.y = cameraShots[0].angle.y;
+		camera.angle.x = cameraShots[cameraShotIndex - 1].angle.x;
+		camera.angle.y = cameraShots[cameraShotIndex - 1].angle.y;
 
 		camera.ISO = scene["camera"]["ISO"];
 
@@ -2994,7 +2935,7 @@ private:
 		static box newBox = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 1, 0 };
 		static lens newLens = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 1.0f, 1.0f, 0.0f, true, 1, 0 };
 		static cyclide newCyclide = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 3.36, -3.17, -1.06, -1.50, 1, 0 };
-		static sdf newSDF = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, R"(
+		static sdf newSDF = { { 0.0f, 0.0f, 0.0f }, { 2.0f, 2.0f, 2.0f }, R"(
 float sdf(in vec3 p){
 	return length(p) - 1.0;
 }
@@ -3032,6 +2973,7 @@ float sdfmaterial(in vec3 p)
 			isReset |= ImGui::DragInt("Path Length", &pathLength, 0.02f, 1, 100000);
 			isLoadScene |= ImGui::Button("Load Scene", ImVec2(303, 0));
 			isSaveScene |= ImGui::Button("Save Scene", ImVec2(303, 0));
+			isSaveRender |= ImGui::Button("Save Render", ImVec2(303, 0));
 			isRecompile |= ImGui::Button("Recompile", ImVec2(303, 0));
 			ImGui::Separator();
 
@@ -3484,19 +3426,11 @@ float sdfmaterial(in vec3 p)
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
 
-		if (OFFSCREENRENDER) {
-			vkDestroyImage(device, saveImage, nullptr);
-			vkFreeMemory(device, saveImageMemory, nullptr);
-			vkDestroyImageView(device, processorImageView, nullptr);
-			vkDestroyImage(device, processorImage, nullptr);
-			vkFreeMemory(device, processorImageMemory, nullptr);
-		} else {
-			for (VkImageView imageView : swapChainImageViews) {
-				vkDestroyImageView(device, imageView, nullptr);
-			}
-
-			vkDestroySwapchainKHR(device, swapChain, nullptr);
+		for (VkImageView imageView : swapChainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr);
 		}
+
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
 	}
 
 	void CleanUpTexelBuffer() {
@@ -3551,6 +3485,35 @@ float sdfmaterial(in vec3 p)
 		if (!SDFDir.empty()) {
 			std::cout << sdfs[sdfSelection].glsl << std::endl;
 			SaveFile(SDFDir, sdfs[sdfSelection].glsl);
+		}
+	}
+
+	void SaveRender() {
+	    std::string renderDir = pfd::save_file("Save Render", "", {"PPM", "*.ppm"}, pfd::opt::force_overwrite).result();
+
+		if (!renderDir.empty()) {
+            void* mappedMemory;
+           	vkMapMemory(device, texelBufferMemory, 0, VK_WHOLE_SIZE, 0, &mappedMemory);
+
+           	float* pixels = static_cast<float*>(mappedMemory);
+           	char* pixelsRGB = new char[W * H * 3];
+
+           	for (int i = 0; i < (W * H); i++) {
+                glm::vec3 inColor = glm::vec3(pixels[4*i], pixels[4*i+1], pixels[4*i+2]);
+                inColor = IlluminantEToD65(inColor);
+                inColor = glm::max(XYZToRGB(inColor), glm::vec3(0.0));
+                inColor = tonemapping(inColor, tonemap);
+                inColor = glm::vec3(sRGBCompanding(inColor.x), sRGBCompanding(inColor.y), sRGBCompanding(inColor.z));
+
+          		pixelsRGB[3*i] = (char)(inColor.x * 255.0);
+          		pixelsRGB[3*i+1] = (char)(inColor.y * 255.0);
+          		pixelsRGB[3*i+2] = (char)(inColor.z * 255.0);
+           	}
+
+           	SavePPM(renderDir, W, H, pixelsRGB);
+
+           	vkUnmapMemory(device, texelBufferMemory);
+           	delete[] pixelsRGB;
 		}
 	}
 
@@ -3609,79 +3572,11 @@ float sdfmaterial(in vec3 p)
 
 		vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
-		if (!OFFSCREENRENDER) {
-			vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+		vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
 
-			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
-		}
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
 		vkCmdEndRenderPass(commandBuffer);
-
-		if (OFFSCREENRENDER) {
-			if (currentSamples >= numSamples) {
-				std::array<VkImageMemoryBarrier, 2> imageMemoryBarrierTransfer1{};
-
-				imageMemoryBarrierTransfer1[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrierTransfer1[0].image = processorImage;
-				imageMemoryBarrierTransfer1[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-				imageMemoryBarrierTransfer1[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-				imageMemoryBarrierTransfer1[0].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-				imageMemoryBarrierTransfer1[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-				imageMemoryBarrierTransfer1[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-				imageMemoryBarrierTransfer1[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrierTransfer1[1].image = saveImage;
-				imageMemoryBarrierTransfer1[1].srcAccessMask = 0;
-				imageMemoryBarrierTransfer1[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				imageMemoryBarrierTransfer1[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				imageMemoryBarrierTransfer1[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-				imageMemoryBarrierTransfer1[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-				vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_DEPENDENCY_BY_REGION_BIT, 0, nullptr, 0, nullptr, 2, imageMemoryBarrierTransfer1.data());
-
-				VkImageCopy region{};
-				region.extent.width = static_cast<uint32_t>(W);
-				region.extent.height = static_cast<uint32_t>(H);
-				region.extent.depth = 1;
-				region.srcOffset = {0, 0, 0};
-				region.dstOffset = {0, 0, 0};
-				region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-				region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-
-				VkClearColorValue clearColor = {{0.0f, 1.0f, 0.0f, 1.0f}};
-
-				VkImageSubresourceRange range{};
-				range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				range.baseArrayLayer = 0;
-				range.layerCount = 1;
-				range.baseMipLevel = 0;
-				range.levelCount = 1;
-
-				vkCmdCopyImage(commandBuffer, processorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, saveImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-				std::array<VkImageMemoryBarrier, 2> imageMemoryBarrierTransfer2{};
-
-				imageMemoryBarrierTransfer2[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrierTransfer2[0].image = processorImage;
-				imageMemoryBarrierTransfer2[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-				imageMemoryBarrierTransfer2[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-				imageMemoryBarrierTransfer2[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-				imageMemoryBarrierTransfer2[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-				imageMemoryBarrierTransfer2[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-				imageMemoryBarrierTransfer2[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrierTransfer2[1].image = saveImage;
-				imageMemoryBarrierTransfer2[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				imageMemoryBarrierTransfer2[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-				imageMemoryBarrierTransfer2[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-				imageMemoryBarrierTransfer2[1].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-				imageMemoryBarrierTransfer2[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-				vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-				VK_DEPENDENCY_BY_REGION_BIT, 0, nullptr, 0, nullptr, 2, imageMemoryBarrierTransfer2.data());
-			}
-		}
 
 		if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("Failed To Record Graphics Command Buffer!");
@@ -3719,9 +3614,6 @@ float sdfmaterial(in vec3 p)
 
 		CreateSwapChain();
 		CreateSwapChainImageViews();
-
-		CreateImages();
-		CreateImageViews();
 
 		CreateFramebuffers();
 	}
@@ -3949,8 +3841,6 @@ float sdfmaterial(in vec3 p)
 	}
 
 	void DrawFrame() {
-		bool isGraphicsRender = (!OFFSCREENRENDER) || (OFFSCREENRENDER && (currentSamples >= numSamples));
-
 		if (isRecompile) {
 			for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 				vkWaitForFences(device, 1, &computeInFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
@@ -3965,6 +3855,11 @@ float sdfmaterial(in vec3 p)
 		UpdateUniformBuffer();
 		UpdatePushConstant();
 
+		if (isSaveRender) {
+		    SaveRender();
+			isSaveRender = false;
+		}
+
 		vkResetFences(device, 1, &computeInFlightFences[currentFrame]);
 		vkResetCommandBuffer(computeCommandBuffers[currentFrame], 0);
 
@@ -3975,7 +3870,7 @@ float sdfmaterial(in vec3 p)
 		computeSubmitInfo.commandBufferCount = 1;
 		computeSubmitInfo.pCommandBuffers = &computeCommandBuffers[currentFrame];
 
-		if (isGraphicsRender) {
+		if (!OFFSCREENRENDER) {
 			computeSubmitInfo.signalSemaphoreCount = 1;
 			computeSubmitInfo.pSignalSemaphores = &computeFinishedSemaphores[currentFrame];
 		}
@@ -3984,14 +3879,12 @@ float sdfmaterial(in vec3 p)
 			throw std::runtime_error("Failed To Submit Compute Command Buffers!");
 		}
 
-		if (isGraphicsRender) {
-			vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		}
-
 		uint32_t imageIndex = 0;
 		VkResult result;
 
 		if (!OFFSCREENRENDER) {
+			vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+
 			if (isVSyncChanged) {
 				RecreateSwapChain();
 
@@ -4015,9 +3908,7 @@ float sdfmaterial(in vec3 p)
 			} else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)) {
 				throw std::runtime_error("Failed To Acquire Swap Chain Image!");
 			}
-		}
 
-		if (isGraphicsRender) {
 			vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 			vkResetCommandBuffer(graphicsCommandBuffers[currentFrame], 0);
@@ -4032,23 +3923,16 @@ float sdfmaterial(in vec3 p)
 
 			std::vector<VkSemaphore> waitSemaphores;
 			waitSemaphores.push_back(computeFinishedSemaphores[currentFrame]);
-			if (OFFSCREENRENDER) {
-				submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
-				submitInfo.pWaitSemaphores = waitSemaphores.data();
-			} else {
-				waitSemaphores.push_back(imageAvailableSemaphores[currentFrame]);
-				submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
-				submitInfo.pWaitSemaphores = waitSemaphores.data();
-				submitInfo.signalSemaphoreCount = 1;
-				submitInfo.pSignalSemaphores = &renderFinishedSemaphores[currentFrame];
-			}
+			waitSemaphores.push_back(imageAvailableSemaphores[currentFrame]);
+			submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
+			submitInfo.pWaitSemaphores = waitSemaphores.data();
+			submitInfo.signalSemaphoreCount = 1;
+			submitInfo.pSignalSemaphores = &renderFinishedSemaphores[currentFrame];
 
 			if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 				throw std::runtime_error("Failed To Submit Draw Command Buffer!");
 			}
-		}
 
-		if (!OFFSCREENRENDER) {
 			VkPresentInfoKHR presentInfo{};
 			presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 			presentInfo.waitSemaphoreCount = 1;
@@ -4090,6 +3974,8 @@ float sdfmaterial(in vec3 p)
 			std::cin >> samplesPerFrame;
 			std::cout << "Path Length: ";
 			std::cin >> pathLength;
+			std::cout << "Camera Shot Index(1, 2, 3, ...): ";
+			std::cin >> cameraShotIndex;
 
 			start = glfwGetTime();
 		}
@@ -4107,10 +3993,14 @@ float sdfmaterial(in vec3 p)
 			} else {
 				scene = ReadJSON(sceneDir.at(0));
 			}
+
+			UpdateFromJSON();
+
+			RecompileComputeShaders();
 		} else {
 			DefaultScene();
+			UpdateFromJSON();
 		}
-		UpdateFromJSON();
 
         while (!glfwWindowShouldClose(window)) {
 			if (!OFFSCREENRENDER) {
@@ -4198,31 +4088,14 @@ float sdfmaterial(in vec3 p)
 		vkDeviceWaitIdle(device);
 
 		if (OFFSCREENRENDER) {
-			VkImageSubresource subresource{};
-			subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			VkSubresourceLayout subresourceLayout{};
-			vkGetImageSubresourceLayout(device, saveImage, &subresource, &subresourceLayout);
-
-			char* pixels = new char[W * H * 4];
-			char* pixelsRGB = new char[W * H * 3];
-			vkMapMemory(device, saveImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&pixels);
-
-			for (int i = 0; i < (W * H); i++) {
-				pixelsRGB[3*i] = pixels[4*i+2];
-				pixelsRGB[3*i+1] = pixels[4*i+1];
-				pixelsRGB[3*i+2] = pixels[4*i];
-			}
-
-			SavePPM("render.ppm", W, H, pixelsRGB);
-
-			vkUnmapMemory(device, saveImageMemory);
-			delete[] pixelsRGB;
-			delete[] pixels;
+		    SaveRender();
 		}
     }
 
     void CleanUp() {
-		CleanUpImages();
+        if (!OFFSCREENRENDER) {
+            CleanUpImages();
+        }
 		CleanUpTexelBuffer();
 
 		if (!OFFSCREENRENDER) {
@@ -4244,11 +4117,13 @@ float sdfmaterial(in vec3 p)
 
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
-		vkDestroyBuffer(device, indexBuffer, nullptr);
-		vkFreeMemory(device, indexBufferMemory, nullptr);
+		if (!OFFSCREENRENDER) {
+    		vkDestroyBuffer(device, indexBuffer, nullptr);
+    		vkFreeMemory(device, indexBufferMemory, nullptr);
 
-		vkDestroyBuffer(device, vertexBuffer, nullptr);
-		vkFreeMemory(device, vertexBufferMemory, nullptr);
+    		vkDestroyBuffer(device, vertexBuffer, nullptr);
+    		vkFreeMemory(device, vertexBufferMemory, nullptr);
+		}
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			vkDestroyFence(device, computeInFlightFences[i], nullptr);
@@ -4262,15 +4137,21 @@ float sdfmaterial(in vec3 p)
 		vkDestroyCommandPool(device, commandPool, nullptr);
 
 		vkDestroyPipeline(device, computePipeline, nullptr);
-		vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		if (!OFFSCREENRENDER) {
+		    vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		}
 		vkDestroyPipelineLayout(device, computePipelineLayout, nullptr);
-		vkDestroyPipelineLayout(device, graphicsPipelineLayout, nullptr);
+		if (!OFFSCREENRENDER) {
+		    vkDestroyPipelineLayout(device, graphicsPipelineLayout, nullptr);
+		}
 
 		for (VkShaderModule shaderModule : shaderModules) {
 			vkDestroyShaderModule(device, shaderModule, nullptr);
 		}
 
-		vkDestroyRenderPass(device, renderPass, nullptr);
+		if (!OFFSCREENRENDER) {
+		  vkDestroyRenderPass(device, renderPass, nullptr);
+		}
 
 		vkDestroyDevice(device, nullptr);
 

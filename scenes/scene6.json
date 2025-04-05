@@ -156,7 +156,7 @@
             "c": -1.06,
             "d": -1.5,
             "boundingRadius": 6.0,
-            "materialID": 3,
+            "materialID": 5,
             "lightID": 0
         }
     ],
@@ -201,6 +201,13 @@
             "reflection": {
                 "peakWavelength": 716.0,
                 "sigma": 5.5,
+                "isInvert": false
+            }
+        },
+        {
+            "reflection": {
+                "peakWavelength": 650.0,
+                "sigma": 5.0,
                 "isInvert": false
             }
         }

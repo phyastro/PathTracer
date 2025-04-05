@@ -1463,6 +1463,7 @@ vec3 Scene(in uvec2 xy, in vec2 uv, in int k) {
     ray.dir = normalize(pointOnAperture - ray.origin);
     // Forward Direction For The Camera
     vec3 forwardDir = vec3(matrix[0][2], matrix[1][2], matrix[2][2]);
+    //ray.dir = normalize(vec3(-uv.x, -uv.y, 0.05)) * matrix;
 
     vec3 color = vec3(0.0);
     float l_h = SampleHeroWavelength(360.0, 800.0, seed);
